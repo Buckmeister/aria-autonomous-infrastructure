@@ -1,0 +1,22 @@
+# Credentials and secrets
+config/matrix-credentials.json
+*.token
+*.secret
+
+# Logs
+*.log
+logs/
+
+# System files
+.DS_Store
+*~
+*.swp
+
+# Environment
+.env
+.venv/
+venv/
+
+# Testing
+test-output/
+*.test.log
