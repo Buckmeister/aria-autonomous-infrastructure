@@ -75,9 +75,8 @@ cp config/matrix-credentials.example.json config/matrix-credentials.json
 
 - **docs/ARCHITECTURE.md** - System design and data flow
 - **docs/SETUP.md** - Step-by-step installation guide
-- **docs/MATRIX_INTEGRATION.md** - Complete Matrix protocol guide
-- **docs/SECURITY.md** - Security model and best practices
-- **docs/TROUBLESHOOTING.md** - Common issues and solutions
+- **docs/INSTANCES.md** - Instance/credential mapping guide
+- **docs/TROUBLESHOOTING.md** - Common issues and solutions (⭐ Read this first!)
 
 ### Configuration
 
@@ -197,6 +196,58 @@ This infrastructure grew from real autonomous AI research. Contributions welcome
 4. Add tests for new functionality
 5. Update documentation
 6. Submit pull request
+
+---
+
+## Production Notes & Lessons Learned
+
+### Debugging Story: Stale Credentials After Matrix Rebuild
+
+**Date:** 2025-10-27
+**Resolution Time:** ~8 minutes
+
+**What happened:**
+After rebuilding our Matrix server with fresh database, messages stopped appearing in Element. Hook scripts ran without errors, but messages went to non-existent rooms from the old database.
+
+**Root cause:**
+Hook script (`~/.claude/matrix-notifier.sh`) had hardcoded credentials:
+```bash
+MATRIX_ROOM="!diPYmQGHKcwnSuskgK:srv1.local"  # OLD room ID
+MATRIX_ACCESS_TOKEN="syt_..._oldtoken"         # From deleted database
+```
+
+**Fix:**
+Updated to fresh credentials from new database. Verified room IDs matched current infrastructure.
+
+**Key learning:**
+> After ANY Matrix database rebuild, update ALL scripts with fresh credentials. Use config-based approach (as this repository does) instead of hardcoded values.
+
+See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#messages-not-appearing-in-element) for complete case study.
+
+### Event-Driven Architecture (Future Enhancement)
+
+**Current:** Continuous polling via `matrix-listener.sh` daemon
+**Future:** Event-driven headless Claude Code triggers
+
+**Proposed architecture:**
+```
+Matrix message arrives →
+  ↓ (listener detects pattern)
+Spawn headless Claude session →
+  ↓ (process task)
+Respond via Matrix →
+  ↓ (complete)
+Session terminates
+```
+
+**Benefits:**
+- More efficient resource usage
+- Better scalability
+- Clean session isolation
+- Automatic lifecycle management
+
+**Implementation status:** Design phase
+**Claude Code headless mode:** Available via `--headless` flag
 
 ---
 
