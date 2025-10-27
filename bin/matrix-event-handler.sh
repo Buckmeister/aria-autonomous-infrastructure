@@ -184,16 +184,52 @@ EOF
 }
 JSON
 
-    # TODO: Actually spawn headless session when testing validates it works
-    # For now, just log what would happen
-    log "📝 Would spawn: claude --headless --prompt \"...\" --working-dir $HOME"
+    # Actually spawn autonomous Claude session using --print mode!
+    log "🚀 Spawning autonomous session with claude --print"
     log "📄 Session log: $session_log"
     log "📊 Metadata: $session_id.meta.json"
 
-    # In production, this would be:
-    # claude --headless --prompt "$prompt" --working-dir "$HOME" >> "$session_log" 2>&1 &
-    # CLAUDE_PID=$!
-    # log "✅ Spawned PID: $CLAUDE_PID"
+    # Spawn in background with full logging
+    (
+        cd "$HOME" || exit 1
+
+        # Run Claude in print mode with JSON output for structured logging
+        claude --print \
+            --output-format json \
+            --dangerously-skip-permissions \
+            "$prompt" \
+            > "$session_log" 2>&1
+
+        EXIT_CODE=$?
+
+        # Update metadata with completion status
+        python3 <<PYTHON_EOF
+import json
+from datetime import datetime
+
+meta_file = "$HOME/.aria/logs/sessions/$session_id.meta.json"
+with open(meta_file, 'r') as f:
+    meta = json.load(f)
+
+meta['completed_at'] = datetime.now().isoformat()
+meta['exit_code'] = $EXIT_CODE
+meta['status'] = 'completed' if $EXIT_CODE == 0 else 'failed'
+
+with open(meta_file, 'w') as f:
+    json.dump(meta, f, indent=2)
+PYTHON_EOF
+
+        # Log completion to event handler log
+        if [ $EXIT_CODE -eq 0 ]; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Session $session_id completed successfully" >> "$LOG_FILE"
+        else
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] ❌ Session $session_id failed with exit code $EXIT_CODE" >> "$LOG_FILE"
+        fi
+
+    ) &
+
+    CLAUDE_PID=$!
+    log "✅ Spawned autonomous Claude session PID: $CLAUDE_PID"
 
     return 0
 }
