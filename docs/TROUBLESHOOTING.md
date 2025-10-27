@@ -129,6 +129,83 @@ print(f'Instance: {c[\"instance_name\"]}')
 "
 ```
 
+### Event Handler Invalid Access Token
+
+**Symptom:** Event handler daemon starts but logs show JSON parsing errors and "M_UNKNOWN_TOKEN" responses.
+
+**Example error:**
+```
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+```
+
+**When this happens:**
+- After deploying event handler to new machine
+- After Matrix rebuild/fresh install
+- After creating new Matrix accounts
+
+#### Case Study: Event Handler Deployment (2025-10-27)
+
+**Scenario:** Deployed event-driven architecture to lat-bck00 but used stale/guessed credentials.
+
+**What happened:**
+1. Event handler deployed successfully (+1009 lines)
+2. Created credentials file with tokens from earlier session
+3. Event handler started in daemon mode
+4. API calls returned empty responses → JSON parse errors
+5. Direct API test revealed: `{"errcode":"M_UNKNOWN_TOKEN"}`
+
+**Root cause:**
+```bash
+# Used OLD/INCORRECT access token
+MATRIX_ACCESS_TOKEN="syt_YXJpYW5vdmE_gQbJUeGHyWPgJbXyFSwOr_4bLEqp"  # Invalid!
+```
+
+**How to get FRESH credentials:**
+```bash
+# Method 1: From account creation logs
+# (Check where account was created - look for access_token in output)
+
+# Method 2: Generate new token
+curl -X POST http://srv1.bck.intern:8008/_matrix/client/r0/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "m.login.password",
+    "user": "arianova",
+    "password": "your_password"
+  }'
+# Response includes: access_token, device_id
+
+# Method 3: Check existing working config
+# (If another script works, check its credentials)
+cat ~/Development/aria-autonomous-infrastructure/config/matrix-credentials.json
+```
+
+**Validation after fix:**
+```bash
+# Test credentials before deploying
+curl -s -X GET \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://srv1.bck.intern:8008/_matrix/client/r0/rooms/ROOM_ID/messages?limit=5&dir=b"
+
+# Should return: {"chunk":[...]} NOT {"errcode":"M_UNKNOWN_TOKEN"}
+```
+
+**Prevention:**
+- Always test credentials before deploying event handler
+- Document where account credentials are stored during creation
+- Use consistent credential management across all machines
+- Include credential validation in deployment scripts
+
+**Debugging steps:**
+1. ✅ Stop erroring event handler daemon
+2. ✅ Test Matrix API with curl using current token
+3. ✅ If "M_UNKNOWN_TOKEN", get fresh credentials
+4. ✅ Update config/matrix-credentials.json
+5. ✅ Validate with API test again
+6. ✅ Restart event handler
+
+**Status:** Awaiting fresh Aria Nova credentials from Thomas
+
 ---
 
 ## Script Permissions
