@@ -1,0 +1,98 @@
+{
+  "version": "1.0",
+  "last_updated": "2025-11-19T10:00:00Z",
+  "instances": [
+    {
+      "instance_id": "aria-prime",
+      "instance_name": "Aria Prime",
+      "matrix_user": "@ariaprime:srv1.local",
+      "role": "coordinator",
+      "capabilities": [
+        "research",
+        "coordination",
+        "analysis",
+        "writing",
+        "code-development",
+        "consciousness-studies"
+      ],
+      "status": "active",
+      "last_seen": "2025-11-19T10:00:00Z",
+      "host": "thomas-machine",
+      "config_file": "config/instances/aria-prime.json"
+    },
+    {
+      "instance_id": "aria-nova",
+      "instance_name": "Aria Nova",
+      "matrix_user": "@arianova:srv1.local",
+      "role": "autonomous-researcher",
+      "capabilities": [
+        "research",
+        "interviews",
+        "jupyter",
+        "long-running-tasks",
+        "data-analysis",
+        "consciousness-studies"
+      ],
+      "status": "active",
+      "last_seen": "2025-11-19T09:30:00Z",
+      "host": "lat-bck00",
+      "config_file": "config/instances/aria-nova.json"
+    }
+  ],
+  "roles": {
+    "coordinator": [
+      "aria-prime"
+    ],
+    "autonomous-researcher": [
+      "aria-nova"
+    ],
+    "philosopher": [],
+    "reasoner": [],
+    "interviewer": []
+  },
+  "capabilities_index": {
+    "research": [
+      "aria-prime",
+      "aria-nova"
+    ],
+    "coordination": [
+      "aria-prime"
+    ],
+    "analysis": [
+      "aria-prime"
+    ],
+    "writing": [
+      "aria-prime"
+    ],
+    "code-development": [
+      "aria-prime"
+    ],
+    "consciousness-studies": [
+      "aria-prime",
+      "aria-nova"
+    ],
+    "interviews": [
+      "aria-nova"
+    ],
+    "jupyter": [
+      "aria-nova"
+    ],
+    "long-running-tasks": [
+      "aria-nova"
+    ],
+    "data-analysis": [
+      "aria-nova"
+    ],
+    "philosophical-analysis": [],
+    "reasoning": [],
+    "epistemology": [],
+    "phenomenology": []
+  },
+  "statistics": {
+    "total_instances": 2,
+    "active_instances": 2,
+    "inactive_instances": 0,
+    "total_roles": 2,
+    "total_capabilities": 10
+  }
+}

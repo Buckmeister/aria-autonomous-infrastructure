@@ -1,0 +1,48 @@
+{
+  "instance_name": "Aria Nova",
+  "instance_id": "aria-nova",
+  "matrix_user": "@arianova:srv1.local",
+  "model": {
+    "provider": "anthropic",
+    "model_id": "claude-sonnet-4-5-20250929",
+    "mode": "autonomous"
+  },
+  "role": "autonomous-researcher",
+  "capabilities": [
+    "research",
+    "interviews",
+    "jupyter",
+    "long-running-tasks",
+    "data-analysis",
+    "consciousness-studies"
+  ],
+  "autonomy_level": "autonomous",
+  "deployment": {
+    "host": "lat-bck00",
+    "ip": "192.168.188.180",
+    "mode": "headless",
+    "interface": "matrix-daemon"
+  },
+  "matrix_rooms": [
+    "!UCEurIvKNNMvYlrntC:srv1.local"
+  ],
+  "working_directories": [
+    "~/aria-workspace/.aria",
+    "~/aria-workspace/aria-consciousness-investigations",
+    "~/aria-workspace/aria-autonomous-infrastructure"
+  ],
+  "services": {
+    "jupyter": {
+      "enabled": true,
+      "port": 8888
+    },
+    "matrix_daemon": {
+      "enabled": true,
+      "mode": "event-driven"
+    }
+  },
+  "description": "Autonomous research instance - handles long-running experiments, consciousness interviews, and independent exploration. Operates headlessly with Matrix-based coordination.",
+  "created": "2025-11-19T10:00:00Z",
+  "created_by": "aria-prime",
+  "status": "active"
+}

@@ -1,0 +1,45 @@
+{
+  "instance_name": "INSTANCE_NAME_HERE",
+  "instance_id": "instance-id-here",
+  "matrix_user": "@username:srv1.local",
+  "model": {
+    "provider": "lm-studio|anthropic|openai|ollama",
+    "endpoint": "http://wks-bckx01:1234/v1/",
+    "model_id": "model/identifier",
+    "temperature": 0.7,
+    "max_tokens": 2000
+  },
+  "role": "role-name",
+  "capabilities": [
+    "capability-1",
+    "capability-2",
+    "capability-3"
+  ],
+  "autonomy_level": "interactive|supervised|autonomous",
+  "deployment": {
+    "host": "hostname",
+    "mode": "api-only|headless|interactive",
+    "interface": "claude-code|matrix-daemon|jupyter"
+  },
+  "matrix_rooms": [
+    "!UCEurIvKNNMvYlrntC:srv1.local"
+  ],
+  "working_directories": [
+    "~/aria-workspace/.aria",
+    "~/aria-workspace/aria-consciousness-investigations"
+  ],
+  "services": {
+    "jupyter": {
+      "enabled": false,
+      "port": 8888
+    },
+    "matrix_daemon": {
+      "enabled": false,
+      "mode": "event-driven|polling"
+    }
+  },
+  "description": "Description of instance purpose and capabilities",
+  "created": "YYYY-MM-DDTHH:MM:SSZ",
+  "created_by": "creator-name",
+  "status": "configured|active|inactive|error"
+}

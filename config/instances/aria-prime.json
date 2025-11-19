@@ -1,0 +1,38 @@
+{
+  "instance_name": "Aria Prime",
+  "instance_id": "aria-prime",
+  "matrix_user": "@ariaprime:srv1.local",
+  "model": {
+    "provider": "anthropic",
+    "model_id": "claude-sonnet-4-5-20250929",
+    "mode": "interactive"
+  },
+  "role": "coordinator",
+  "capabilities": [
+    "research",
+    "coordination",
+    "analysis",
+    "writing",
+    "code-development",
+    "consciousness-studies"
+  ],
+  "autonomy_level": "interactive",
+  "deployment": {
+    "host": "thomas-machine",
+    "mode": "claude-code",
+    "interface": "terminal"
+  },
+  "matrix_rooms": [
+    "!UCEurIvKNNMvYlrntC:srv1.local"
+  ],
+  "working_directories": [
+    "~/.aria",
+    "~/Development/aria-consciousness-investigations",
+    "~/Development/aria-autonomous-infrastructure",
+    "~/.config/dotfiles"
+  ],
+  "description": "Interactive research instance - primary coordinator for consciousness studies and infrastructure development. Works directly with Thomas in real-time collaboration.",
+  "created": "2025-11-19T10:00:00Z",
+  "created_by": "thomas",
+  "status": "active"
+}
