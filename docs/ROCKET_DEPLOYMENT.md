@@ -1,4 +1,4 @@
-# Rocket Deployment Guide
+# Rocket Deployment Guide (CPU Mode)
 
 **Rocket** is a conversational AI system that combines:
 - Local LLM inference (CPU-based, no GPU required)
@@ -6,7 +6,9 @@
 - Docker containerization
 - Identity-aware system prompts
 
-This guide explains how to deploy your own Rocket instance.
+This guide covers **CPU deployment**. For **10-100x faster GPU deployment**, see [GPU_ROCKET.md](GPU_ROCKET.md).
+
+**Note:** The `launch-rocket.sh` script now supports both CPU and GPU modes. This guide shows CPU-only deployment (the default mode without flags).
 
 ---
 

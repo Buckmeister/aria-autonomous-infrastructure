@@ -3,12 +3,12 @@
 > **Production-ready infrastructure for AI autonomy with Matrix integration, modular libraries, and GPU-accelerated conversational AI**
 
 [![Status](https://img.shields.io/badge/status-production-brightgreen.svg)](https://github.com/Buckmeister/aria-autonomous-infrastructure)
-[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Built by:** Thomas & Aria Prime  
-**Validated with:** Aria Nova (autonomous instance), Rocket (conversational AI)  
-**Architecture:** V2.0 modular libraries + V2.1 GPU acceleration
+**Built by:** Thomas & Aria Prime
+**Validated with:** Aria Nova (autonomous instance), Rocket (conversational AI)
+**Architecture:** V2.0 modular libraries + V2.1 GPU acceleration + V2.2 unified deployment
 
 ---
 
@@ -30,6 +30,13 @@ Complete infrastructure for running autonomous AI instances with **two-way Matri
 - Response times: 1-5 seconds (GPU) vs 30-60 seconds (CPU)
 - Zero-download deployment using existing model files
 
+**V2.2: Unified Deployment** (November 2025)
+- Single `launch-rocket.sh` script for all scenarios (CPU/GPU, local/remote)
+- Flags: `--use-gpu`, `--use-compose`, `--docker-host ssh://user@host`
+- Backward compatibility with `*-legacy.sh` scripts
+- Real-world deployment testing and documentation
+- Production-validated remote Docker deployment
+
 ---
 
 ## 🚀 Quick Start
@@ -39,11 +46,11 @@ Complete infrastructure for running autonomous AI instances with **two-way Matri
 Requires: Docker host with NVIDIA GPU, existing GGUF models
 
 ```bash
-# List available models on GPU host
-./bin/launch-rocket-gpu.sh --list-models
-
 # Deploy with GPU acceleration
-./bin/launch-rocket-gpu.sh \
+./bin/launch-rocket.sh \
+    --use-gpu --use-compose \
+    --model-path "/models/your-model.gguf" \
+    --models-dir "/path/to/models" \
     --matrix-server http://srv1:8008 \
     --matrix-user @rocket:srv1.local \
     --matrix-token syt_your_token_here \
@@ -62,6 +69,7 @@ Requires: Docker (local or remote)
 ```bash
 # Deploy with automatic model download
 ./bin/launch-rocket.sh \
+    --model Qwen/Qwen2.5-0.5B-Instruct \
     --matrix-server http://srv1:8008 \
     --matrix-user @rocket:srv1.local \
     --matrix-token syt_your_token_here \
@@ -70,6 +78,8 @@ Requires: Docker (local or remote)
 # First deployment: ~5-10 minutes (model download)
 # Response time: 30-60 seconds per message
 ```
+
+**Remote Deployment:** Add `--docker-host ssh://user@host` to deploy to any Docker host!
 
 [→ Complete CPU Rocket Guide](docs/ROCKET_DEPLOYMENT.md)
 
@@ -239,9 +249,9 @@ aria-autonomous-infrastructure/
 │   │   ├── matrix_api.sh
 │   │   ├── matrix_auth.sh
 │   │   ├── instance_utils.sh
+│   │   ├── deployment_utils.sh  # Unified deployment helpers
 │   │   └── matrix_client.py     # Python equivalent
-│   ├── launch-rocket.sh         # CPU Rocket deployment
-│   ├── launch-rocket-gpu.sh     # GPU Rocket deployment
+│   ├── launch-rocket.sh         # Unified deployment (CPU/GPU, local/remote)
 │   ├── matrix-notifier.sh       # Outbound Matrix notifications
 │   ├── matrix-listener.sh       # Inbound Matrix commands
 │   ├── matrix-event-handler.sh  # Event-driven spawning

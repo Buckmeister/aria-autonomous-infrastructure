@@ -3,7 +3,7 @@ FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_DOCKER_ARCH=all
-ENV LLAMA_CUBLAS=1
+ENV GGML_CUDA=1
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y \
 RUN python3 -m pip install --upgrade pip
 
 # Install llama-cpp-python with CUDA support
-RUN CMAKE_ARGS="-DLLAMA_CUBLAS=on" pip install llama-cpp-python[server]==0.3.2 --force-reinstall --no-cache-dir
+RUN CMAKE_ARGS="-DGGML_CUDA=on" pip install llama-cpp-python[server]==0.3.2 --force-reinstall --no-cache-dir
 
 # Install additional dependencies
 RUN pip install --no-cache-dir \

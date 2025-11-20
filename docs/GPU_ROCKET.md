@@ -43,7 +43,7 @@ GPU Rocket is a Docker Compose-based deployment that provides **GPU-accelerated 
 ### List Available Models
 
 ```bash
-./bin/launch-rocket-gpu.sh --list-models
+./bin/launch-rocket.sh --use-gpu --use-compose --list-models
 ```
 
 This SSH's to your GPU host and lists all GGUF models.
@@ -51,7 +51,10 @@ This SSH's to your GPU host and lists all GGUF models.
 ### Deploy
 
 ```bash
-./bin/launch-rocket-gpu.sh \
+./bin/launch-rocket.sh \
+    --use-gpu --use-compose \
+    --model-path "/models/your-model.gguf" \
+    --models-dir "/path/to/models" \
     --matrix-server http://srv1:8008 \
     --matrix-user @rocket:srv1.local \
     --matrix-token syt_your_token_here \
@@ -125,7 +128,10 @@ This SSH's to your GPU host and lists all GGUF models.
 
 Default model (gemma-3-12b-it-Q4_K_M):
 ```bash
-./bin/launch-rocket-gpu.sh \
+./bin/launch-rocket.sh \
+    --use-gpu --use-compose \
+    --model-path "/models/.../gemma-3-12b-it-Q4_K_M.gguf" \
+    --models-dir "/d/Models" \
     --matrix-server http://srv1:8008 \
     --matrix-user @rocket:srv1.local \
     --matrix-token syt_abc123 \
@@ -135,11 +141,28 @@ Default model (gemma-3-12b-it-Q4_K_M):
 ### Custom Model
 
 ```bash
-./bin/launch-rocket-gpu.sh \
-    --model "/models/LM-Studio/lmstudio-community/Mistral-Small-3.2-24B-Instruct-2506-GGUF/Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf" \
+./bin/launch-rocket.sh \
+    --use-gpu --use-compose \
+    --model-path "/models/LM-Studio/lmstudio-community/Mistral-Small-3.2-24B-Instruct-2506-GGUF/Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf" \
+    --models-dir "/d/Models" \
     --matrix-server http://srv1:8008 \
     --matrix-user @rocket2:srv1.local \
     --matrix-token syt_def456 \
+    --matrix-room '!xyz:srv1.local'
+```
+
+### Remote Deployment
+
+Deploy to remote Docker host via SSH:
+```bash
+./bin/launch-rocket.sh \
+    --use-gpu --use-compose \
+    --docker-host ssh://Aria@wks-bckx01 \
+    --model-path "/models/.../gemma-3-12b-it-Q4_K_M.gguf" \
+    --models-dir "/d/Models" \
+    --matrix-server http://srv1:8008 \
+    --matrix-user @rocket:srv1.local \
+    --matrix-token syt_abc123 \
     --matrix-room '!xyz:srv1.local'
 ```
 
@@ -148,15 +171,19 @@ Default model (gemma-3-12b-it-Q4_K_M):
 Run different models simultaneously:
 ```bash
 # Small fast model on port 8080
-./bin/launch-rocket-gpu.sh \
-    --model "/models/.../gemma-3-12b-it-Q4_K_M.gguf" \
+./bin/launch-rocket.sh \
+    --use-gpu --use-compose \
+    --model-path "/models/.../gemma-3-12b-it-Q4_K_M.gguf" \
+    --models-dir "/d/Models" \
     --port 8080 \
     --matrix-user @rocket-small:srv1.local \
     ...
 
-# Large quality model on port 8081  
-./bin/launch-rocket-gpu.sh \
-    --model "/models/.../Mistral-Small-3.2-24B-...gguf" \
+# Large quality model on port 8081
+./bin/launch-rocket.sh \
+    --use-gpu --use-compose \
+    --model-path "/models/.../Mistral-Small-3.2-24B-...gguf" \
+    --models-dir "/d/Models" \
     --port 8081 \
     --matrix-user @rocket-large:srv1.local \
     ...
@@ -166,19 +193,26 @@ Run different models simultaneously:
 
 ## Command-Line Options
 
+### Deployment Mode (Required for GPU)
+- `--use-gpu` - Enable GPU acceleration
+- `--use-compose` - Use Docker Compose orchestration
+
 ### Required
 - `--matrix-server URL` - Matrix homeserver
 - `--matrix-user ID` - Matrix user ID (e.g., @rocket:srv1.local)
 - `--matrix-token TOKEN` - Matrix access token
 - `--matrix-room ID` - Matrix room ID (e.g., !abc:srv1.local)
 
-### Optional
-- `--model PATH` - Model path in /models (default: gemma-3-12b-it)
+### Model Configuration
+- `--model-path PATH` - Full path to GGUF model file in /models
+- `--models-dir PATH` - Directory containing models to mount (e.g., /d/Models)
 - `--list-models` - List available GGUF models
+
+### Optional
 - `--gpu-layers N` - GPU layers (-1=all, default: -1)
 - `--port PORT` - Inference port (default: 8080)
 - `--instance-name NAME` - Display name (default: Rocket)
-- `--docker-host USER@HOST` - Docker host SSH (default: Aria@wks-bckx01)
+- `--docker-host ssh://USER@HOST` - Remote Docker host (default: local)
 
 ---
 

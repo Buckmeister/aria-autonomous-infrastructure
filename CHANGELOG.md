@@ -6,6 +6,68 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.2.0] - 2025-11-20
+
+### Added - V2.2 Unified Deployment Architecture
+
+**Single Script for All Scenarios**
+- Unified `launch-rocket.sh` replaces separate CPU/GPU scripts
+- Supports CPU-only, GPU-accelerated, local and remote deployments
+- Flags: `--use-gpu`, `--use-compose`, `--docker-host ssh://user@host`
+- Backward compatibility: Old scripts preserved as `*-legacy.sh`
+- Complete deployment flexibility with single interface
+
+**Shared Deployment Library**
+- `bin/lib/deployment_utils.sh`: Common deployment functions
+- Remote Docker host support via SSH
+- Environment variable management
+- Consistent error handling across modes
+
+**Documentation Updates**
+- Updated README.md with unified script examples
+- Updated `docs/GPU_ROCKET.md` with new syntax
+- Updated `docs/ROCKET_DEPLOYMENT.md` with CPU mode clarification
+- Added remote deployment examples throughout
+
+### Fixed
+
+**GGML_CUDA Deprecation**
+- Replaced deprecated `LLAMA_CUBLAS` with `GGML_CUDA`
+- Updated `docker/inference-server/Dockerfile`
+- Both environment variable and CMAKE_ARGS flags
+- Ensures compatibility with latest llama-cpp-python
+
+### Lessons Learned - Real-World Deployment Testing
+
+**Challenge 1: Windows + SSH + Docker Credential Helper**
+- **Issue:** Cannot pull images via SSH on Windows hosts
+- **Error:** "A specified logon session does not exist"
+- **Root Cause:** Docker credential helper can't access Windows Credential Manager from SSH sessions
+- **Workaround:** Manually pull images in interactive desktop session
+- **Status:** Known Docker limitation, documented in deployment guides
+
+**Challenge 2: CUDA Build Complexity**
+- **Issue:** CUDA linker errors during llama-cpp-python compilation
+- **Error:** `undefined reference to 'cuGetErrorString'`
+- **Context:** After 13+ minutes of successful compilation
+- **Status:** Requires additional investigation into CUDA library linking
+- **Impact:** GPU deployment works with pre-built images
+
+**Learning 3: Real-World Testing is Essential**
+- Testing unified script with actual remote deployment revealed edge cases
+- Docker credential issues only appear in SSH scenarios
+- Production validation requires testing all deployment modes
+- Documentation benefits immensely from real-world usage patterns
+
+**Timeline:**
+- V2.2 Planning: ~15 minutes
+- Script unification: ~30 minutes
+- Real-world testing: ~90 minutes (including debugging)
+- Documentation updates: ~20 minutes
+- **Total:** Concept to production-documented in one session!
+
+---
+
 ## [2.1.0] - 2025-11-20
 
 ### Added - V2.1 GPU Rocket
