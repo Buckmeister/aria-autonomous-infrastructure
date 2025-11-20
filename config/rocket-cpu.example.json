@@ -1,0 +1,13 @@
+{
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "matrix": {
+    "server": "http://srv1:8008",
+    "user": "@rocket-cpu:srv1.local",
+    "token": "syt_CHANGEME",
+    "room": "!CHANGEME:srv1.local"
+  },
+  "instance_name": "Rocket-CPU",
+  "port": 8080,
+  "memory": "4g",
+  "cpus": "2"
+}

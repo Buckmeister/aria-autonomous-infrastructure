@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.3.0] - 2025-11-20
+
+### Added - V2.3 Enhanced User Experience
+
+**Simplified GPU Deployment**
+- `--use-gpu` now automatically enables Docker Compose
+- No need to specify both `--use-gpu` and `--use-compose`
+- Cleaner command-line interface: `./bin/launch-rocket.sh --use-gpu ...`
+
+**JSON Configuration File Support**
+- New `--config` flag for loading configuration from JSON files
+- Supports both nested and flat JSON structures
+- Example config files provided: `config/rocket-gpu.example.json`, `config/rocket-cpu.example.json`
+- Command-line options override config file values
+- Perfect for:
+  - Multiple deployment profiles (dev, staging, prod)
+  - Team collaboration (version-controlled configs)
+  - Secrets management (gitignored config with tokens)
+  - CI/CD automation
+
+**Usage Examples:**
+```bash
+# Old way (v2.2):
+./bin/launch-rocket.sh --use-gpu --use-compose --model-path ... --models-dir ... \
+    --matrix-server ... --matrix-user ... --matrix-token ... --matrix-room ...
+
+# New way (v2.3 with auto-compose):
+./bin/launch-rocket.sh --use-gpu --model-path ... --models-dir ... \
+    --matrix-server ... --matrix-user ... --matrix-token ... --matrix-room ...
+
+# Cleanest way (v2.3 with config file):
+./bin/launch-rocket.sh --config rocket-gpu.json
+```
+
+### Changed
+
+**Documentation Updates**
+- Updated `launch-rocket.sh` usage with config file examples
+- Simplified all GPU deployment examples (removed redundant `--use-compose`)
+- Added JSON config schema documentation in examples
+- Updated README.md version to 2.3.0
+
+---
+
 ## [2.2.0] - 2025-11-20
 
 ### Added - V2.2 Unified Deployment Architecture

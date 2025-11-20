@@ -3,12 +3,12 @@
 > **Production-ready infrastructure for AI autonomy with Matrix integration, modular libraries, and GPU-accelerated conversational AI**
 
 [![Status](https://img.shields.io/badge/status-production-brightgreen.svg)](https://github.com/Buckmeister/aria-autonomous-infrastructure)
-[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.3.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **Built by:** Thomas & Aria Prime
 **Validated with:** Aria Nova (autonomous instance), Rocket (conversational AI)
-**Architecture:** V2.0 modular libraries + V2.1 GPU acceleration + V2.2 unified deployment
+**Architecture:** V2.0 modular libraries + V2.1 GPU acceleration + V2.2 unified deployment + V2.3 JSON configs
 
 ---
 
@@ -37,6 +37,13 @@ Complete infrastructure for running autonomous AI instances with **two-way Matri
 - Real-world deployment testing and documentation
 - Production-validated remote Docker deployment
 
+**V2.3: Enhanced User Experience** (November 2025)
+- `--use-gpu` automatically enables Docker Compose (no redundancy!)
+- JSON configuration file support with `--config` flag
+- Example configs for GPU and CPU deployments
+- Perfect for team collaboration and CI/CD automation
+- Command-line options override config file values
+
 ---
 
 ## 🚀 Quick Start
@@ -46,15 +53,18 @@ Complete infrastructure for running autonomous AI instances with **two-way Matri
 Requires: Docker host with NVIDIA GPU, existing GGUF models
 
 ```bash
-# Deploy with GPU acceleration
+# Deploy with GPU acceleration (compose enabled automatically!)
 ./bin/launch-rocket.sh \
-    --use-gpu --use-compose \
+    --use-gpu \
     --model-path "/models/your-model.gguf" \
     --models-dir "/path/to/models" \
     --matrix-server http://srv1:8008 \
     --matrix-user @rocket:srv1.local \
     --matrix-token syt_your_token_here \
     --matrix-room '!your_room_id:srv1.local'
+
+# Or use a config file (cleaner for multiple deployments!)
+./bin/launch-rocket.sh --config config/rocket-gpu.json
 
 # Services start in ~30 seconds (image caching!)
 # Response time: 1-5 seconds per message ⚡

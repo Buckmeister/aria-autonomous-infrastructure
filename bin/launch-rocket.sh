@@ -76,8 +76,13 @@ DOCKER_HOST_KEY="$HOME/.aria/ssh/aria_wks-bckx01"
 show_usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
+   or: $0 --config CONFIG_FILE
 
 Universal Rocket deployment supporting CPU/GPU, local/remote, and multiple deployment methods.
+
+=== Configuration ===
+  --config FILE         Load configuration from JSON file (see examples below)
+                        Command-line options override config file values
 
 === Required Options ===
   --matrix-server URL    Matrix homeserver (e.g., http://srv1:8008)
@@ -86,8 +91,8 @@ Universal Rocket deployment supporting CPU/GPU, local/remote, and multiple deplo
   --matrix-room ID       Matrix room ID (e.g., '!abc:srv1.local')
 
 === Deployment Mode ===
-  --use-gpu             Enable GPU acceleration (requires CUDA)
-  --use-compose         Use Docker Compose (recommended for GPU)
+  --use-gpu             Enable GPU acceleration (automatically enables Docker Compose)
+  --use-compose         Use Docker Compose (not needed with --use-gpu)
   --docker-host HOST    Docker host (local, tcp://host:port, or ssh://user@host)
 
 === Model Configuration ===
@@ -115,18 +120,18 @@ Universal Rocket deployment supporting CPU/GPU, local/remote, and multiple deplo
      --matrix-token syt_abc123 \\
      --matrix-room '!xyz:srv1.local'
 
-  # 2. Remote GPU deployment via SSH (uses existing models)
-  $0 --use-gpu --use-compose \\
+  # 2. Remote GPU deployment via SSH (compose enabled automatically)
+  $0 --use-gpu \\
      --docker-host ssh://Aria@wks-bckx01 \\
      --model-path "/models/LM-Studio/.../gemma-3-12b-it-Q4_K_M.gguf" \\
-     --models-dir "D:\\Models" \\
+     --models-dir "/d/Models" \\
      --matrix-server http://srv1:8008 \\
      --matrix-user @rocket:srv1.local \\
      --matrix-token syt_abc123 \\
      --matrix-room '!xyz:srv1.local'
 
-  # 3. Local GPU with Docker Compose
-  $0 --use-gpu --use-compose \\
+  # 3. Local GPU deployment (compose enabled automatically)
+  $0 --use-gpu \\
      --model-path "/models/my-model.gguf" \\
      --models-dir "/path/to/models" \\
      --matrix-server http://srv1:8008 \\
@@ -134,7 +139,25 @@ Universal Rocket deployment supporting CPU/GPU, local/remote, and multiple deplo
      --matrix-token syt_abc123 \\
      --matrix-room '!xyz:srv1.local'
 
-  # 4. Remote CPU deployment via SSH
+  # 4. Using JSON config file
+  $0 --config rocket-gpu.json
+
+  # Example rocket-gpu.json:
+  {
+    "use_gpu": true,
+    "model_path": "/models/.../gemma-3-12b-it-Q4_K_M.gguf",
+    "models_dir": "/d/Models",
+    "docker_host": "ssh://Aria@wks-bckx01",
+    "matrix": {
+      "server": "http://srv1:8008",
+      "user": "@rocket:srv1.local",
+      "token": "syt_abc123",
+      "room": "!xyz:srv1.local"
+    },
+    "instance_name": "Rocket-Gemma-12B"
+  }
+
+  # 5. Remote CPU deployment via SSH
   $0 --docker-host ssh://user@remotehost \\
      --model Qwen/Qwen2.5-1.5B-Instruct \\
      --matrix-server http://srv1:8008 \\
@@ -149,8 +172,84 @@ EOF
 # Argument Parsing
 # ============================================================================
 
+# Load configuration from JSON file
+load_config_from_json() {
+    local config_file="$1"
+
+    if [[ ! -f "$config_file" ]]; then
+        exit_with_error "Config file not found: $config_file"
+    fi
+
+    log_info "Loading configuration from: $config_file"
+
+    # Check if jq is available
+    if ! command -v jq &> /dev/null; then
+        exit_with_error "jq is required for JSON config files. Install with: brew install jq (macOS) or apt install jq (Linux)"
+    fi
+
+    # Load each configuration value from JSON (only if not empty)
+    local value
+
+    # Deployment mode
+    value=$(jq -r '.use_gpu // empty' "$config_file")
+    [[ -n "$value" ]] && USE_GPU="$value"
+
+    value=$(jq -r '.use_compose // empty' "$config_file")
+    [[ -n "$value" ]] && USE_COMPOSE="$value"
+
+    value=$(jq -r '.docker_host // empty' "$config_file")
+    [[ -n "$value" ]] && DOCKER_HOST_PARAM="$value"
+
+    # Model configuration
+    value=$(jq -r '.model // empty' "$config_file")
+    [[ -n "$value" ]] && MODEL_NAME="$value"
+
+    value=$(jq -r '.model_path // empty' "$config_file")
+    [[ -n "$value" ]] && MODEL_PATH="$value"
+
+    value=$(jq -r '.models_dir // empty' "$config_file")
+    [[ -n "$value" ]] && MODELS_DIR="$value"
+
+    value=$(jq -r '.gpu_layers // empty' "$config_file")
+    [[ -n "$value" ]] && N_GPU_LAYERS="$value"
+
+    # Container settings
+    value=$(jq -r '.container_name // empty' "$config_file")
+    [[ -n "$value" ]] && CONTAINER_NAME="$value"
+
+    value=$(jq -r '.port // empty' "$config_file")
+    [[ -n "$value" ]] && INFERENCE_PORT="$value"
+
+    value=$(jq -r '.memory // empty' "$config_file")
+    [[ -n "$value" ]] && MEMORY_LIMIT="$value"
+
+    value=$(jq -r '.cpus // empty' "$config_file")
+    [[ -n "$value" ]] && CPU_LIMIT="$value"
+
+    value=$(jq -r '.instance_name // empty' "$config_file")
+    [[ -n "$value" ]] && INSTANCE_NAME="$value"
+
+    # Matrix configuration (can be nested)
+    value=$(jq -r '.matrix.server // .matrix_server // empty' "$config_file")
+    [[ -n "$value" ]] && MATRIX_SERVER="$value"
+
+    value=$(jq -r '.matrix.user // .matrix_user // empty' "$config_file")
+    [[ -n "$value" ]] && MATRIX_USER="$value"
+
+    value=$(jq -r '.matrix.token // .matrix_token // empty' "$config_file")
+    [[ -n "$value" ]] && MATRIX_TOKEN="$value"
+
+    value=$(jq -r '.matrix.room // .matrix_room // empty' "$config_file")
+    [[ -n "$value" ]] && MATRIX_ROOM="$value"
+
+    log_info "Configuration loaded successfully"
+}
+
 while [[ $# -gt 0 ]]; do
     case $1 in
+        # Config file
+        --config) load_config_from_json "$2"; shift 2 ;;
+
         # Deployment mode
         --use-gpu) USE_GPU=true; shift ;;
         --use-compose) USE_COMPOSE=true; shift ;;
@@ -213,15 +312,10 @@ else
     log_info "Local deployment (default)"
 fi
 
-# Auto-enable compose for GPU deployments if not explicitly set
-if [[ "$USE_GPU" == "true" ]] && [[ "$USE_COMPOSE" == "false" ]]; then
-    log_warn "GPU mode enabled without --use-compose. GPU deployments work best with Docker Compose."
-    read -p "Enable Docker Compose for GPU deployment? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        USE_COMPOSE=true
-        log_info "Docker Compose enabled"
-    fi
+# Auto-enable compose for GPU deployments (GPU always uses compose)
+if [[ "$USE_GPU" == "true" ]]; then
+    USE_COMPOSE=true
+    log_info "GPU mode: Docker Compose automatically enabled"
 fi
 
 # Validate model configuration
