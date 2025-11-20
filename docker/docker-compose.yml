@@ -1,0 +1,95 @@
+# Rocket GPU - Docker Compose Configuration
+# Deploys conversational AI with GPU-accelerated inference
+
+version: '3.8'
+
+services:
+  # Inference Server - llama.cpp with CUDA
+  inference-server:
+    build:
+      context: ./inference-server
+      dockerfile: Dockerfile
+    container_name: rocket-inference
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Model configuration (override via .env or command line)
+      - MODEL_PATH=${MODEL_PATH:-/models/LM-Studio/lmstudio-community/gemma-3-12b-it-GGUF/gemma-3-12b-it-Q4_K_M.gguf}
+      - N_GPU_LAYERS=${N_GPU_LAYERS:--1}
+      - N_CTX=${N_CTX:-4096}
+      - N_BATCH=${N_BATCH:-512}
+      - N_THREADS=${N_THREADS:-8}
+      - HOST=0.0.0.0
+      - PORT=8080
+    volumes:
+      # Mount model directory (read-only for safety)
+      - ${MODELS_DIR:-/d/Models}:/models:ro
+    ports:
+      - "${INFERENCE_PORT:-8080}:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - rocket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Matrix Listener - Connects Matrix to inference server
+  matrix-listener:
+    build:
+      context: ./matrix-listener
+      dockerfile: Dockerfile
+    container_name: rocket-listener
+    depends_on:
+      inference-server:
+        condition: service_healthy
+    environment:
+      - CONFIG_FILE=/root/aria-autonomous-infrastructure/config/matrix-credentials.json
+      - INFERENCE_URL=http://inference-server:8080/v1/chat/completions
+      - LOG_FILE=/var/log/conversational-listener.log
+    volumes:
+      # Mount Matrix credentials
+      - ${MATRIX_CONFIG_DIR:-./config}:/root/aria-autonomous-infrastructure/config:ro
+      # Mount custom listener script if provided
+      - ${LISTENER_SCRIPT:-./matrix-listener/matrix-conversational-listener-openai.sh}:/root/aria-autonomous-infrastructure/bin/matrix-conversational-listener.sh:ro
+    networks:
+      - rocket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "matrix-conversational-listener"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  rocket-network:
+    driver: bridge
+
+# Usage:
+#   # Set environment variables in .env file or export:
+#   export MODEL_PATH="/models/LM-Studio/lmstudio-community/gemma-3-12b-it-GGUF/gemma-3-12b-it-Q4_K_M.gguf"
+#   export MODELS_DIR="/d/Models"
+#   export MATRIX_CONFIG_DIR="./config"
+#   
+#   # Build and start:
+#   docker-compose up --build
+#   
+#   # Or detached:
+#   docker-compose up -d --build
+#   
+#   # View logs:
+#   docker-compose logs -f
+#   
+#   # Stop:
+#   docker-compose down
