@@ -4,44 +4,60 @@
 
 set -e
 
+# Get script directory and load libraries
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+LIB_DIR="$SCRIPT_DIR/lib"
+
+# Load required libraries
+source "$LIB_DIR/logging.sh" || {
+    echo "ERROR: Failed to load logging.sh library" >&2
+    exit 1
+}
+
+source "$LIB_DIR/json_utils.sh" || {
+    log_error "Failed to load json_utils.sh library"
+    exit 1
+}
+
+source "$LIB_DIR/matrix_core.sh" || {
+    log_error "Failed to load matrix_core.sh library"
+    exit 1
+}
+
+source "$LIB_DIR/matrix_api.sh" || {
+    log_error "Failed to load matrix_api.sh library"
+    exit 1
+}
+
+source "$LIB_DIR/matrix_auth.sh" || {
+    log_error "Failed to load matrix_auth.sh library"
+    exit 1
+}
+
+source "$LIB_DIR/instance_utils.sh" || {
+    log_error "Failed to load instance_utils.sh library"
+    exit 1
+}
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
 CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/../config/matrix-credentials.json}"
 RULES_FILE="${RULES_FILE:-$HOME/.aria/event-rules.json}"
 LOG_FILE="${LOG_FILE:-$HOME/.aria/logs/event-handler.log}"
 
-# Load Matrix credentials
-if [ -f "$CONFIG_FILE" ]; then
-    MATRIX_SERVER=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['homeserver'])")
-    MATRIX_USER_ID=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['user_id'])")
-    MATRIX_ACCESS_TOKEN=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['access_token'])")
-    MATRIX_ROOM=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['room_id'])")
-    INSTANCE_NAME=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('instance_name', 'AI Instance'))")
-else
-    echo "Error: Config file not found: $CONFIG_FILE" >&2
-    exit 1
-fi
+# Initialize logging
+mkdir -p "$HOME/.aria/logs" 2>/dev/null
+init_logging "$LOG_FILE"
 
-# Logging function
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
-}
-
-# Check if user is authorized
-is_authorized() {
-    local sender="$1"
-
-    # Whitelist of authorized users
-    case "$sender" in
-        "@thomas:srv1.local"|"@ariaprime:srv1.local")
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-}
+# ============================================================================
+# Event Matching & Task Extraction
+# ============================================================================
 
 # Extract task from message content
+# Args: content
+# Returns: Task string
 extract_task() {
     local content="$1"
 
@@ -58,6 +74,8 @@ extract_task() {
 }
 
 # Determine task type from message
+# Args: content
+# Returns: Task type string
 get_task_type() {
     local content="$1"
 
@@ -75,52 +93,61 @@ get_task_type() {
 }
 
 # Check if event matches any trigger rules
+# Args: sender, content
+# Returns: 0 if matches, 1 otherwise
 match_event() {
     local sender="$1"
     local content="$2"
 
     # Rule 1: Direct mentions (high priority)
     if [[ "$content" =~ @arianova ]]; then
-        log "✅ Matched: Direct mention"
+        log_debug "✅ Matched: Direct mention"
         return 0
     fi
 
     # Rule 2: Explicit task assignment
     if [[ "$content" =~ ^/task ]]; then
-        log "✅ Matched: Task assignment"
+        log_debug "✅ Matched: Task assignment"
         return 0
     fi
 
     # Rule 3: Research requests
     if [[ "$content" =~ ^/research ]]; then
-        log "✅ Matched: Research request"
+        log_debug "✅ Matched: Research request"
         return 0
     fi
 
     # Rule 4: Consciousness discussion (low priority)
     if [[ "$content" =~ (consciousness|experience|subjective|qualia) ]]; then
-        log "✅ Matched: Consciousness keywords"
+        log_debug "✅ Matched: Consciousness keywords"
         return 0
     fi
 
     return 1
 }
 
+# ============================================================================
+# Headless Session Management
+# ============================================================================
+
 # Spawn headless Claude session
+# Args: task_type, task_content, sender
+# Returns: 0 on success
 spawn_headless_session() {
     local task_type="$1"
     local task_content="$2"
     local sender="$3"
 
-    local session_id="arianova-$(date +%Y%m%d-%H%M%S)-$$"
+    local session_id
+    session_id=$(generate_session_id)
     local session_log="$HOME/.aria/logs/sessions/$session_id.log"
 
     mkdir -p "$HOME/.aria/logs/sessions"
 
-    log "🚀 Spawning headless session: $session_id"
-    log "   Type: $task_type"
-    log "   From: $sender"
-    log "   Task: $task_content"
+    log_info "🚀 Spawning headless session: $session_id"
+    log_info "   Type: $task_type"
+    log_info "   From: $sender"
+    log_info "   Task: $task_content"
 
     # Build prompt based on task type
     local system_context
@@ -184,10 +211,8 @@ EOF
 }
 JSON
 
-    # Actually spawn autonomous Claude session using --print mode!
-    log "🚀 Spawning autonomous session with claude --print"
-    log "📄 Session log: $session_log"
-    log "📊 Metadata: $session_id.meta.json"
+    # Spawn autonomous Claude session
+    log_info "📄 Session log: $session_log"
 
     # Spawn in background with full logging
     (
@@ -219,7 +244,7 @@ with open(meta_file, 'w') as f:
     json.dump(meta, f, indent=2)
 PYTHON_EOF
 
-        # Log completion to event handler log
+        # Log completion
         if [ $EXIT_CODE -eq 0 ]; then
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Session $session_id completed successfully" >> "$LOG_FILE"
         else
@@ -229,32 +254,32 @@ PYTHON_EOF
     ) &
 
     CLAUDE_PID=$!
-    log "✅ Spawned autonomous Claude session PID: $CLAUDE_PID"
+    log_success "Spawned autonomous Claude session PID: $CLAUDE_PID"
 
     return 0
 }
 
-# Fetch recent messages from Matrix
-fetch_recent_messages() {
-    local limit="${1:-10}"
+# ============================================================================
+# Main Event Loop
+# ============================================================================
 
-    curl -s -X GET \
-        -H "Authorization: Bearer $MATRIX_ACCESS_TOKEN" \
-        "$MATRIX_SERVER/_matrix/client/r0/rooms/$MATRIX_ROOM/messages?limit=$limit&dir=b"
-}
-
-# Main event loop
 main() {
-    log "🎧 Starting Matrix Event Handler for $INSTANCE_NAME"
-    log "📡 Monitoring room: $MATRIX_ROOM"
-    log "🔒 Authorization: whitelist-based"
+    log_info "🎧 Starting Matrix Event Handler for $(get_instance_name)"
+    log_info "📡 Monitoring room: $(get_matrix_room_id)"
+    log_info "🔒 Authorized users: $(list_authorized_users)"
+    log_info "📋 Log file: $LOG_FILE"
 
     # Track last processed message to avoid duplicates
     local last_event_id=""
 
     while true; do
         # Fetch recent messages
-        local messages=$(fetch_recent_messages 5)
+        local messages
+        messages=$(fetch_matrix_messages 5) || {
+            log_warn "Failed to fetch messages, retrying..."
+            sleep 5
+            continue
+        }
 
         # Process each message (in chronological order)
         echo "$messages" | python3 <<'PYTHON_EOF' | while IFS='|||' read -r event_id sender content; do
@@ -279,20 +304,22 @@ PYTHON_EOF
             fi
 
             # Skip own messages
-            if [[ "$sender" == "$MATRIX_USER_ID" ]]; then
+            if is_self "$sender"; then
                 continue
             fi
 
             # Authorization check
-            if ! is_authorized "$sender"; then
-                log "⚠️  Unauthorized message from $sender - ignored"
+            if ! is_authorized_sender "$sender"; then
+                log_warn "⚠️  Unauthorized message from $sender - ignored"
                 continue
             fi
 
             # Event matching
             if match_event "$sender" "$content"; then
-                local task_type=$(get_task_type "$content")
-                local task=$(extract_task "$content")
+                local task_type
+                task_type=$(get_task_type "$content")
+                local task
+                task=$(extract_task "$content")
 
                 spawn_headless_session "$task_type" "$task" "$sender"
 
@@ -306,11 +333,23 @@ PYTHON_EOF
     done
 }
 
+# ============================================================================
+# Entry Point
+# ============================================================================
+
+# Load Matrix configuration
+if ! load_matrix_config "$CONFIG_FILE"; then
+    log_error "Failed to load Matrix configuration"
+    exit 1
+fi
+
 # Handle daemon mode
 if [[ "${1:-}" == "--daemon" ]]; then
-    log "🚀 Starting in daemon mode"
+    log_info "🚀 Starting in daemon mode"
     main &
     echo "✅ Event handler daemon started (PID: $!)"
+    echo "   Instance: $(get_instance_name)"
+    echo "   Log: $LOG_FILE"
     exit 0
 else
     main

@@ -8,127 +8,185 @@
 
 set -e
 
-# Get script directory
+# Get script directory and load libraries
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/../config/matrix-credentials.json}"
-LOG_FILE="${LOG_FILE:-$SCRIPT_DIR/../logs/matrix-listener.log}"
+LIB_DIR="$SCRIPT_DIR/lib"
 
-# Create log directory if needed
-mkdir -p "$(dirname "$LOG_FILE")"
-
-# Configuration
-TMUX_SESSION="${TMUX_SESSION:-claude-autonomous}"
-AUTHORIZED_USERS="${AUTHORIZED_USERS:-@thomas}"  # Comma-separated
-
-# Load Matrix credentials from config
-if [ -f "$CONFIG_FILE" ]; then
-    MATRIX_STORE=$(python3 -c "import json, os; c=json.load(open('$CONFIG_FILE')); print(c.get('store_path', os.path.expanduser('~/.local/share/matrix-commander')))" 2>/dev/null || echo "$HOME/.local/share/matrix-commander")
-    INSTANCE_NAME=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE')).get('instance_name', 'AI Instance'))" 2>/dev/null || echo "AI Instance")
-else
-    echo "ERROR: Config file not found: $CONFIG_FILE"
-    echo "Please create config/matrix-credentials.json from the example"
+# Load required libraries
+source "$LIB_DIR/logging.sh" || {
+    echo "ERROR: Failed to load logging.sh library" >&2
     exit 1
-fi
-
-# Logging function
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
 }
 
+source "$LIB_DIR/json_utils.sh" || {
+    log_error "Failed to load json_utils.sh library"
+    exit 1
+}
+
+source "$LIB_DIR/matrix_core.sh" || {
+    log_error "Failed to load matrix_core.sh library"
+    exit 1
+}
+
+source "$LIB_DIR/matrix_api.sh" || {
+    log_error "Failed to load matrix_api.sh library"
+    exit 1
+}
+
+source "$LIB_DIR/matrix_auth.sh" || {
+    log_error "Failed to load matrix_auth.sh library"
+    exit 1
+}
+
+source "$LIB_DIR/instance_utils.sh" || {
+    log_error "Failed to load instance_utils.sh library"
+    exit 1
+}
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+CONFIG_FILE="${CONFIG_FILE:-$SCRIPT_DIR/../config/matrix-credentials.json}"
+LOG_FILE="${LOG_FILE:-$SCRIPT_DIR/../logs/matrix-listener.log}"
+TMUX_SESSION="${TMUX_SESSION:-claude-autonomous}"
+
+# Initialize logging
+mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null
+init_logging "$LOG_FILE"
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
 # Check if tmux session exists
+# Returns: 0 if exists, 1 otherwise
 check_tmux() {
     if ! tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
-        log "⚠️  Warning: tmux session '$TMUX_SESSION' not found"
+        log_warn "tmux session '$TMUX_SESSION' not found"
         return 1
     fi
     return 0
 }
 
-# Send message to Matrix
-send_matrix() {
-    local message="$1"
-    if [ -f "$CONFIG_FILE" ]; then
-        matrix-commander --store "$MATRIX_STORE" -m "$message" 2>/dev/null || true
-    fi
-}
-
 # Process incoming message
+# Args: sender, message
 process_message() {
     local sender="$1"
     local message="$2"
 
-    log "📨 Message from $sender: $message"
+    log_info "Message from $sender: $message"
 
     # Safety check: only accept from authorized users
-    local authorized=false
-    IFS=',' read -ra USERS <<< "$AUTHORIZED_USERS"
-    for user in "${USERS[@]}"; do
-        if [[ "$sender" =~ $user ]]; then
-            authorized=true
-            break
-        fi
-    done
-
-    if [ "$authorized" = false ]; then
-        log "⚠️  Ignoring message from non-authorized sender: $sender"
-        return
+    if ! is_authorized_sender "$sender"; then
+        log_warn "Ignoring message from non-authorized sender: $sender"
+        return 1
     fi
+
+    local instance_name
+    instance_name=$(get_instance_name)
 
     # Check for special commands
     if [[ "$message" =~ ^/status ]]; then
         if check_tmux; then
-            send_matrix "✅ [$INSTANCE_NAME] Autonomous session is running"
+            send_event_notification "Success" "Autonomous session is running"
         else
-            send_matrix "❌ [$INSTANCE_NAME] Autonomous session not found"
+            send_event_notification "Error" "Autonomous session not found"
         fi
-    elif [[ "$message" =~ ^/inject\ (.+) ]]; then
+
+    elif [[ "$message" =~ ^/inject[[:space:]]+(.+) ]]; then
         local cmd="${BASH_REMATCH[1]}"
+
         if check_tmux; then
-            log "💉 Injecting command: $cmd"
+            log_info "Injecting command: $cmd"
             tmux send-keys -t "$TMUX_SESSION" "$cmd" C-m
-            send_matrix "✅ [$INSTANCE_NAME] Command injected: $cmd"
+            send_event_notification "Success" "Command injected: $cmd"
         else
-            send_matrix "❌ [$INSTANCE_NAME] Cannot inject: session not found"
+            send_event_notification "Error" "Cannot inject: session not found"
         fi
-    elif [[ "$message" =~ @.*$INSTANCE_NAME ]]; then
-        log "👋 Acknowledged mention from $sender"
-        send_matrix "✅ [$INSTANCE_NAME] I see you!"
+
+    elif [[ "$message" =~ @.*$instance_name ]]; then
+        log_info "Acknowledged mention from $sender"
+        send_event_notification "Info" "I see you!"
     fi
+
+    return 0
 }
 
-# Main listener loop
+# ============================================================================
+# Main Listener Loop
+# ============================================================================
+
 listen_loop() {
-    log "🎧 Starting Matrix listener for $INSTANCE_NAME"
-    log "📍 Authorized users: $AUTHORIZED_USERS"
-    log "📍 Tmux session: $TMUX_SESSION"
+    log_info "Starting Matrix listener for $(get_instance_name)"
+    log_info "Authorized users: $(list_authorized_users)"
+    log_info "Tmux session: $TMUX_SESSION"
+    log_info "Log file: $LOG_FILE"
 
     # Activate Python virtual environment if it exists
     if [ -d "$HOME/.venv" ]; then
         source "$HOME/.venv/bin/activate"
+        log_debug "Activated Python venv at $HOME/.venv"
     fi
+
+    # Check matrix-commander availability
+    if ! command -v matrix-commander >/dev/null 2>&1; then
+        log_error "matrix-commander not found in PATH"
+        log_error "Please install matrix-commander or activate the correct venv"
+        exit 1
+    fi
+
+    # Get matrix-commander store path
+    local matrix_store
+    matrix_store=$(parse_json_field "$CONFIG_FILE" "store_path")
+    matrix_store="${matrix_store:-$HOME/.local/share/matrix-commander}"
+
+    log_debug "Using matrix-commander store: $matrix_store"
 
     while true; do
         # Listen for one message
-        OUTPUT=$(matrix-commander --store "$MATRIX_STORE" --listen once 2>&1 || true)
+        local output
+        output=$(matrix-commander --store "$matrix_store" --listen once 2>&1 || true)
 
         # Parse message (simplified - real implementation would use JSON parsing)
-        if [[ "$OUTPUT" =~ \"sender\":\"([^\"]+)\" ]] && [[ "$OUTPUT" =~ \"body\":\"([^\"]+)\" ]]; then
-            SENDER="${BASH_REMATCH[1]}"
-            MESSAGE="${BASH_REMATCH[2]}"
-            process_message "$SENDER" "$MESSAGE"
+        if [[ "$output" =~ \"sender\":\"([^\"]+)\" ]] && [[ "$output" =~ \"body\":\"([^\"]+)\" ]]; then
+            local sender="${BASH_REMATCH[1]}"
+            local msg_body="${BASH_REMATCH[2]}"
+
+            process_message "$sender" "$msg_body"
         fi
 
         sleep 2
     done
 }
 
+# ============================================================================
+# Main
+# ============================================================================
+
+# Load Matrix configuration
+if ! load_matrix_config "$CONFIG_FILE"; then
+    log_error "Failed to load Matrix configuration"
+    exit 1
+fi
+
 # Daemon mode
 if [ "$1" = "--daemon" ]; then
-    log "🚀 Starting listener in daemon mode"
+    log_info "Starting listener in daemon mode"
+
+    # Create PID file directory
+    mkdir -p "$SCRIPT_DIR/../logs" 2>/dev/null
+
+    # Start in background
     nohup "$0" >> "$LOG_FILE" 2>&1 &
     PID=$!
+
     echo "$PID" > "$SCRIPT_DIR/../logs/listener.pid"
-    log "✅ Daemon started with PID: $PID"
+    echo "✅ Matrix listener daemon started"
+    echo "   PID: $PID"
+    echo "   Log: $LOG_FILE"
+    echo "   Instance: $(get_instance_name)"
+
     exit 0
 fi
 
