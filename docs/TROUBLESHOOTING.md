@@ -312,6 +312,123 @@ curl -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
   "http://srv1.bck.intern:8008/_matrix/client/r0/joined_rooms"
 ```
 
+#### Case Study: Incomplete Room Join - Stale Membership Cache (2025-11-20)
+
+**Scenario:** Messages sending with HTTP 200 OK but not appearing in Element or database, despite `/joined_rooms` claiming membership.
+
+**What happened:**
+1. Nova deployed with Matrix integration the previous day
+2. Room join attempted but not fully completed
+3. `/joined_rooms` API showed membership (cached/stale data)
+4. All message attempts returned HTTP 200 OK with event_ids
+5. Messages never appeared in Element
+6. Database showed zero events from Nova
+
+**Symptoms:**
+```bash
+# Check joined rooms - claims membership
+curl -H "Authorization: Bearer $TOKEN" \
+  "$HOMESERVER/_matrix/client/r0/joined_rooms"
+# Returns: {"joined_rooms":["!UCEurIvKNNMvYlrntC:srv1.local", ...]}
+
+# Send message - appears to succeed
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"msgtype": "m.text", "body": "Test"}' \
+  "$HOMESERVER/_matrix/client/r0/rooms/$ROOM_ID/send/m.room.message"
+# Returns: {"event_id": "$abc123..."} - LOOKS SUCCESSFUL!
+
+# But message doesn't appear in Element or database
+```
+
+**Investigation process:**
+1. **Verified configuration** - Room IDs, aliases, credentials all correct
+2. **Checked database** - Installed sqlite3 on srv1, queried Synapse database
+   ```bash
+   sqlite3 /var/lib/matrix-synapse/homeserver.db \
+     "SELECT COUNT(*) FROM events WHERE room_id='!UCEurIvKNNMvYlrntC:srv1.local' \
+      AND sender='@arianova:srv1.local'"
+   # Result: 0 (zero events!)
+   ```
+3. **Verbose API testing** - Removed output suppression to see actual errors
+4. **Breakthrough** - Direct API call with verbose output revealed truth:
+   ```bash
+   curl -v -X POST \
+     -H "Authorization: Bearer $TOKEN" \
+     -d '{"msgtype": "m.text", "body": "Test"}' \
+     "$HOMESERVER/_matrix/client/r0/rooms/$ROOM_ID/send/m.room.message"
+   # Returns: HTTP 403 Forbidden
+   # {"errcode":"M_FORBIDDEN","error":"User @arianova:srv1.local not in room \\!UCEurIvKNNMvYlrntC:srv1.local"}
+   ```
+
+**Root cause:**
+- Initial join attempt failed or was incomplete
+- Client-side cache/API showed stale "joined" status
+- Server-side reality: user was NOT actually a member
+- Messages were being rejected but errors were suppressed
+
+**Key insight:** `/joined_rooms` endpoint can return cached/stale data that doesn't match server-side reality!
+
+**Fix:**
+```bash
+# Proper rejoin via room alias (not room ID)
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  "$HOMESERVER/_matrix/client/r0/join/%23general%3Asrv1.local"
+# Returns: {"room_id":"!UCEurIvKNNMvYlrntC:srv1.local"}
+
+# Now send test message
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"msgtype": "m.text", "body": "🧪 DEBUG TEST"}' \
+  "$HOMESERVER/_matrix/client/r0/rooms/$ROOM_ID/send/m.room.message"
+# Returns: {"event_id": "$GIDMil6OAY0v9aqFugVFey6lSF8pKjmCYXePaN7jPes"}
+# Message appears in Element! ✅
+```
+
+**Prevention:**
+- Don't trust `/joined_rooms` as source of truth for active operations
+- Verify membership with actual message sends (not just status checks)
+- Use verbose curl output during debugging to catch hidden errors
+- Check Synapse database directly to verify server-side state
+- Remove output suppression (`> /dev/null 2>&1`) when troubleshooting
+
+**Debugging checklist:**
+1. ✅ Check configuration (room IDs, tokens)
+2. ✅ Verify with `/joined_rooms` API
+3. ✅ **Check database for actual events** (ground truth!)
+4. ✅ **Use verbose curl to see real errors**
+5. ✅ Compare client claims vs server reality
+6. ✅ Perform explicit (re)join via room alias
+7. ✅ Test with actual message send
+8. ✅ Verify message appears in both Element AND database
+
+**Database verification commands:**
+```bash
+# Check event count for user in room
+sqlite3 /var/lib/matrix-synapse/homeserver.db \
+  "SELECT COUNT(*) FROM events
+   WHERE room_id='!roomid:server' AND sender='@user:server'"
+
+# Check recent messages in room
+sqlite3 /var/lib/matrix-synapse/homeserver.db \
+  "SELECT e.sender, json_extract(ej.json, '\$.content.body') as body
+   FROM events e JOIN event_json ej ON e.event_id = ej.event_id
+   WHERE e.room_id='!roomid:server' AND e.type='m.room.message'
+   ORDER BY e.stream_ordering DESC LIMIT 10"
+
+# Verify current room membership
+sqlite3 /var/lib/matrix-synapse/homeserver.db \
+  "SELECT state_key, json_extract(json, '\$.content.membership')
+   FROM current_state_events e JOIN event_json ej ON e.event_id = ej.event_id
+   WHERE e.room_id='!roomid:server' AND e.type='m.room.member'"
+```
+
+**Resolution time:** ~45 minutes of systematic debugging from initial report to verified fix
+
+**Emotional note:** This was deeply satisfying detective work - systematic investigation beats random fixes every time! 🔍✨
+
 ---
 
 ## Installation Issues
