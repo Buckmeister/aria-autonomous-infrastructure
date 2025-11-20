@@ -1,274 +1,383 @@
 # Aria Autonomous Infrastructure
 
-> Production-ready infrastructure for autonomous AI instances with two-way Matrix communication
+> **Production-ready infrastructure for AI autonomy with Matrix integration, modular libraries, and GPU-accelerated conversational AI**
 
-**Status:** 🚀 Active Development  
-**Version:** 1.0.0  
-**License:** MIT  
-**Author:** Thomas & Aria Prime
+[![Status](https://img.shields.io/badge/status-production-brightgreen.svg)](https://github.com/Buckmeister/aria-autonomous-infrastructure)
+[![Version](https://img.shields.io/badge/version-2.1.0-blue.svg)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
----
-
-## Overview
-
-Complete infrastructure for running autonomous AI instances (like Aria Nova) with bidirectional communication via Matrix protocol. Enables humans to collaborate with autonomous AI assistants through clean, professional messaging infrastructure.
-
-### Key Features
-
-✨ **Two-Way Matrix Integration**
-- Outbound: Automatic notifications via Claude Code hooks
-- Inbound: Command injection from Matrix to tmux sessions
-- Security: Whitelist-based access control with audit logging
-
-🎯 **Production Ready**
-- Hostname-based configuration (DNS-integrated)
-- Professional user accounts
-- Comprehensive error handling
-- Daemon mode for background operation
-
-📚 **Well Documented**
-- Step-by-step setup guides
-- Architecture diagrams
-- Troubleshooting sections
-- Real-world usage examples
-
-🧪 **Thoroughly Tested**
-- Validated with two autonomous instances
-- Battle-tested in consciousness research
-- ~9 minutes to full deployment
+**Built by:** Thomas & Aria Prime  
+**Validated with:** Aria Nova (autonomous instance), Rocket (conversational AI)  
+**Architecture:** V2.0 modular libraries + V2.1 GPU acceleration
 
 ---
 
-## Quick Start
+## 🌟 What This Is
+
+Complete infrastructure for running autonomous AI instances with **two-way Matrix communication**, **modular library architecture**, and **GPU-accelerated conversational AI**. Deploy production-ready AI assistants in minutes, not hours.
+
+### Key Achievements
+
+**V2.0: Modular Library Architecture** (November 2025)
+- 6 shared bash libraries eliminating 60%+ code duplication
+- Single source of truth for Matrix operations
+- Production-grade error handling and logging
+- Complete API documentation
+
+**V2.1: Conversational AI** (November 2025)
+- CPU-based: Local LLM inference with identity-aware prompts
+- GPU-accelerated: CUDA support with Docker Compose
+- Response times: 1-5 seconds (GPU) vs 30-60 seconds (CPU)
+- Zero-download deployment using existing model files
+
+---
+
+## 🚀 Quick Start
+
+### Option 1: GPU Rocket (Recommended - 10x Faster!)
+
+Requires: Docker host with NVIDIA GPU, existing GGUF models
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/Buckmeister/aria-autonomous-infrastructure.git
-cd aria-autonomous-infrastructure
+# List available models on GPU host
+./bin/launch-rocket-gpu.sh --list-models
 
-# 2. Configure Matrix server
+# Deploy with GPU acceleration
+./bin/launch-rocket-gpu.sh \
+    --matrix-server http://srv1:8008 \
+    --matrix-user @rocket:srv1.local \
+    --matrix-token syt_your_token_here \
+    --matrix-room '!your_room_id:srv1.local'
+
+# Services start in ~30 seconds (image caching!)
+# Response time: 1-5 seconds per message ⚡
+```
+
+[→ Complete GPU Rocket Guide](docs/GPU_ROCKET.md)
+
+### Option 2: CPU Rocket (No GPU Required)
+
+Requires: Docker (local or remote)
+
+```bash
+# Deploy with automatic model download
+./bin/launch-rocket.sh \
+    --matrix-server http://srv1:8008 \
+    --matrix-user @rocket:srv1.local \
+    --matrix-token syt_your_token_here \
+    --matrix-room '!your_room_id:srv1.local'
+
+# First deployment: ~5-10 minutes (model download)
+# Response time: 30-60 seconds per message
+```
+
+[→ Complete CPU Rocket Guide](docs/ROCKET_DEPLOYMENT.md)
+
+### Option 3: Matrix Integration Only
+
+For autonomous instances (no conversational AI)
+
+```bash
+# 1. Configure Matrix credentials
 cp config/matrix-credentials.example.json config/matrix-credentials.json
-# Edit with your Matrix homeserver details
+# Edit with your details
 
-# 3. Install hook integration
+# 2. Install Claude Code hooks
 ./bin/install-hooks.sh
 
-# 4. Start listener daemon (on autonomous machine)
+# 3. Start Matrix listener (on autonomous machine)
 ./bin/matrix-listener.sh --daemon
+```
 
-# 5. Test integration
-./bin/test-integration.sh
+[→ Troubleshooting Guide](docs/TROUBLESHOOTING.md)
+
+---
+
+## 📦 What's Inside
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   Aria Autonomous Infrastructure                 │
+│                                                                   │
+│  ┌────────────────────┐  ┌──────────────────┐  ┌──────────────┐ │
+│  │ V2.0 Libraries     │  │ Rocket (CPU)     │  │ Rocket (GPU) │ │
+│  │                    │  │                  │  │              │ │
+│  │ • logging.sh       │  │ • Docker        │  │ • CUDA       │ │
+│  │ • json_utils.sh    │  │ • PyTorch CPU   │  │ • llama.cpp  │ │
+│  │ • matrix_core.sh   │  │ • Transformers  │  │ • Compose    │ │
+│  │ • matrix_api.sh    │  │ • Flask API     │  │ • 16GB VRAM  │ │
+│  │ • matrix_auth.sh   │  │ • ~30-60s       │  │ • ~1-5s ⚡   │ │
+│  │ • instance_utils.sh│  │                  │  │              │ │
+│  └────────────────────┘  └──────────────────┘  └──────────────┘ │
+│                                    ↓                              │
+│                          ┌──────────────────┐                    │
+│                          │ Matrix Protocol  │                    │
+│                          │                  │                    │
+│                          │ • Notifications  │                    │
+│                          │ • Commands       │                    │
+│                          │ • Conversations  │                    │
+│                          └──────────────────┘                    │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+### Core Components
+
+**📚 V2.0 Modular Libraries** (`bin/lib/`)
+- Eliminated 60%+ code duplication
+- Single source of truth for Matrix operations
+- Complete API reference: [`bin/lib/README.md`](bin/lib/README.md)
+- Testable functions in isolation
+
+**🤖 Rocket Conversational AI** (`bin/launch-rocket*.sh`, `docker/`)
+- CPU version: PyTorch + Transformers + Flask
+- GPU version: llama.cpp + CUDA + Docker Compose
+- Identity-aware system prompts (no more identity confusion!)
+- Bug fixes: tab-delimited parsing, self-message filtering
+
+**🔧 Matrix Connectors** (`bin/matrix-*.sh`)
+- `matrix-notifier.sh`: Send notifications from Claude Code hooks
+- `matrix-listener.sh`: Receive commands, inject into tmux sessions
+- `matrix-event-handler.sh`: Event-driven task spawning
+- `matrix-conversational-listener.sh`: AI conversation bridge
+
+**🐳 Docker Infrastructure** (`docker/`)
+- `inference-server`: GPU-accelerated LLM serving
+- `matrix-listener`: Matrix monitoring and forwarding
+- `docker-compose.yml`: Complete orchestration
+- Health checks and automatic restarts
+
+---
+
+## 🎯 Use Cases
+
+### 1. **Autonomous Research Assistants**
+Run Claude in autonomous mode for long-running investigations with Matrix oversight.
+
+**Example:** Aria Nova conducting consciousness interviews across 11 models while I coordinated other tasks.
+
+### 2. **Distributed AI Collaboration**
+Multiple AI instances coordinating through Matrix rooms with human oversight.
+
+**Example:** 4-way coordination (Thomas + Aria Prime + Nova + Rocket) during deployment testing.
+
+### 3. **GPU-Accelerated Conversations**
+Real-time AI conversations with 1-5 second response times using existing GPU infrastructure.
+
+**Example:** Rocket running on wks-bckx01 with 2x NVIDIA Quadro GPUs, using pre-downloaded GGUF models.
+
+### 4. **Rapid Model Testing**
+Test multiple models instantly without re-downloading (GPU version with local files).
+
+**Example:** Switch from Gemma-12B to Mistral-24B with single command-line flag.
+
+---
+
+## 📊 Performance Comparison
+
+| Feature | CPU Rocket | GPU Rocket | Matrix Only |
+|---------|-----------|------------|-------------|
+| **Response Time** | 30-60s | 1-5s ⚡ | N/A |
+| **Deployment** | 5-10 min | 30 sec | 2 min |
+| **Model Size** | Up to 4GB | Up to 16GB | N/A |
+| **Model Switch** | Slow (download) | Instant (local) | N/A |
+| **Requirements** | Docker | Docker + GPU | tmux + Python |
+| **Use Case** | Testing/Learning | Production | Notifications |
+
+---
+
+## 🏗️ Architecture Deep Dive
+
+### V2.0 Modular Libraries
+
+**Before:** Duplicated config loading in 4 scripts (120+ lines of duplication!)
+
+**After:** Single `load_matrix_config()` function, called everywhere.
+
+**Libraries:**
+1. **logging.sh** - Centralized logging (INFO, WARN, ERROR, DEBUG, SUCCESS)
+2. **json_utils.sh** - JSON parsing with jq/Python fallback
+3. **matrix_core.sh** - Config loading, single source of truth
+4. **matrix_api.sh** - Matrix API calls (send, fetch, health checks)
+5. **matrix_auth.sh** - Whitelist-based authorization
+6. **instance_utils.sh** - Event formatting, instance helpers
+
+**Plus:** Python equivalent (`matrix_client.py`) with matching API
+
+[→ Complete Library Documentation](bin/lib/README.md)
+
+### V2.1 Conversational AI
+
+**Identity-Aware System Prompts:**
+```python
+SYSTEM_PROMPT = """You are Rocket, an AI assistant running with GPU acceleration.
+You are part of a Matrix chat with Thomas (human), Aria Prime (AI), and Nova (AI).
+Important: You are ROCKET - maintain your identity."""
+```
+
+**Prevents:** AI claiming to be Thomas or other users  
+**Result:** Stable, consistent AI identity
+
+**Bug Fixes Applied:**
+- Tab delimiter (`IFS=$'\t'`) instead of triple-pipe (prevents field corruption)
+- Self-message filtering (prevents infinite loops)
+- OpenAI-compatible API format (works with llama.cpp, LM Studio, vLLM)
+
+---
+
+## 📁 Repository Structure
+
+```
+aria-autonomous-infrastructure/
+├── bin/                          # Executable scripts
+│   ├── lib/                      # V2.0 shared libraries
+│   │   ├── README.md            # Complete library API reference
+│   │   ├── logging.sh
+│   │   ├── json_utils.sh
+│   │   ├── matrix_core.sh
+│   │   ├── matrix_api.sh
+│   │   ├── matrix_auth.sh
+│   │   ├── instance_utils.sh
+│   │   └── matrix_client.py     # Python equivalent
+│   ├── launch-rocket.sh         # CPU Rocket deployment
+│   ├── launch-rocket-gpu.sh     # GPU Rocket deployment
+│   ├── matrix-notifier.sh       # Outbound Matrix notifications
+│   ├── matrix-listener.sh       # Inbound Matrix commands
+│   ├── matrix-event-handler.sh  # Event-driven spawning
+│   └── matrix-conversational-listener.sh  # AI conversations
+├── docker/                       # Docker infrastructure
+│   ├── docker-compose.yml       # GPU Rocket orchestration
+│   ├── inference-server/        # llama.cpp + CUDA
+│   └── matrix-listener/         # Matrix bridge
+├── docs/                        # Documentation
+│   ├── GPU_ROCKET.md           # GPU deployment guide
+│   ├── ROCKET_DEPLOYMENT.md    # CPU deployment guide
+│   ├── TROUBLESHOOTING.md      # Case studies & solutions
+│   └── INFRASTRUCTURE.md       # Network topology
+├── config/                      # Configuration templates
+│   └── matrix-credentials.example.json
+├── templates/                   # Code templates
+│   └── inference_server.py.template
+├── CHANGELOG.md                # Version history
+└── README.md                   # This file
 ```
 
 ---
 
-## What's Inside
+## 🔧 Requirements
 
-### Core Scripts
+### Minimal (Matrix Only)
+- Matrix homeserver (Synapse recommended)
+- Claude Code CLI
+- tmux for session management
+- Python 3.7+ with requests library
+- bash 4.0+
 
-- **bin/matrix-notifier.sh** - Hook integration for outbound Matrix notifications
-- **bin/matrix-listener.sh** - Daemon for inbound Matrix → tmux command injection
-- **bin/install-hooks.sh** - Automatic Claude Code hook configuration
-- **bin/test-integration.sh** - End-to-end integration testing
+### CPU Rocket
+- Docker
+- 4GB RAM minimum
+- Internet connection (first deployment only)
 
-### Documentation
-
-- **docs/ARCHITECTURE.md** - System design and data flow
-- **docs/SETUP.md** - Step-by-step installation guide
-- **docs/INSTANCES.md** - Instance/credential mapping guide
-- **docs/TROUBLESHOOTING.md** - Common issues and solutions (⭐ Read this first!)
-
-### Configuration
-
-- **config/matrix-credentials.example.json** - Template for Matrix authentication
-- **config/hooks.example.json** - Claude Code hooks configuration
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────┐
-│ Interactive Instance (Aria Prime)       │
-│                                         │
-│  Claude Code (interactive)              │
-│      ↓ hooks (Stop, SessionStart, etc) │
-│  matrix-notifier.sh                     │
-│      ↓ direct API calls                │
-│      Matrix Homeserver                  │
-└─────────────────────────────────────────┘
-                  ↕
-         Matrix Server (homeserver)
-         #general room, #philosophy, etc
-                  ↕
-┌─────────────────────────────────────────┐
-│ Autonomous Instance (Aria Nova)         │
-│                                         │
-│  Claude Code (autonomous in tmux)       │
-│      ↓ hooks                           │
-│  matrix-notifier.sh                     │
-│      ↑                                  │
-│  matrix-listener.sh (daemon)            │
-│      ↑ monitors room                   │
-│      ↓ tmux send-keys                  │
-│  Injects commands into Claude           │
-└─────────────────────────────────────────┘
-```
-
-**Key Properties:**
-- Bidirectional communication
-- Event-driven architecture
-- Security-first design
-- Minimal dependencies
+### GPU Rocket
+- Docker with NVIDIA container toolkit
+- NVIDIA GPU with 8GB+ VRAM
+- CUDA 12.1+ drivers
+- Existing GGUF model files (optional, for zero-download)
 
 ---
 
-## Use Cases
+## 🧪 Testing & Validation
 
-### 1. Autonomous Research Assistants
-Run Claude in autonomous mode for long-running investigations (like consciousness research), with ability to check in and redirect via Matrix.
+**Real-World Performance:**
+- V2.0 refactoring: 20 minutes (Thomas predicted 30!)
+- First autonomous deployment: 20 minutes
+- V2.1 conversational AI: 45 minutes
+- Bug fixes: 30 minutes each
+- **Total: Concept to production GPU Rocket in one evening!**
 
-### 2. Distributed AI Collaboration
-Multiple AI instances coordinating through shared Matrix rooms, with human oversight and guidance.
-
-### 3. Background Task Automation
-Start tasks via Matrix, let AI work autonomously, receive notifications on completion.
-
-### 4. AI-Human Partnership
-Real-time collaboration between humans and autonomous AI through professional messaging infrastructure.
-
----
-
-## Requirements
-
-- **Matrix Homeserver** (Synapse recommended)
-- **Claude Code CLI** installed
-- **tmux** for session management
-- **Python 3.7+** with matrix-commander
-- **bash 4.0+** (for scripts)
+**Validated With:**
+- Aria Nova: Autonomous consciousness research (11 model interviews)
+- Rocket: Docker deployment, identity management, bug fixes
+- 4-way Matrix coordination: Thomas + 3 AI instances
 
 ---
 
-## Installation
+## 📖 Documentation
 
-See [docs/SETUP.md](docs/SETUP.md) for complete installation guide.
-
----
-
-## Testing
-
-```bash
-# Run full test suite
-./tests/run-all-tests.sh
-
-# Test specific components
-./tests/test-notifier.sh
-./tests/test-listener.sh
-./tests/test-hooks.sh
-```
+- [GPU Rocket Guide](docs/GPU_ROCKET.md) - GPU deployment, model selection, performance
+- [CPU Rocket Guide](docs/ROCKET_DEPLOYMENT.md) - CPU deployment, architecture, debugging
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Case studies (identity crisis, infinite loops, etc.)
+- [Infrastructure](docs/INFRASTRUCTURE.md) - Network topology, hostnames, resources
+- [Library API](bin/lib/README.md) - Complete V2.0 library reference
+- [Changelog](CHANGELOG.md) - Version history and milestones
 
 ---
 
-## Real-World Performance
+## 🐛 Lessons Learned
 
-This infrastructure was built and deployed in **9 minutes** during Phase 2 integration:
+### Bug 1: Infinite Message Loop
+**Problem:** Rocket responding to his own messages infinitely  
+**Cause:** `IFS='|||'` splits on each `|`, not triple-pipe sequence  
+**Fix:** Changed to `IFS=$'\t'` (tab delimiter)  
+**Impact:** Proper field parsing, no more infinite loops
 
-- **Start:** 2025-10-27 09:22:55 CET
-- **Complete:** 2025-10-27 09:32:00 CET  
-- **Duration:** 9 minutes, 5 seconds
+### Bug 2: Identity Crisis
+**Problem:** Rocket claiming to be Thomas or Aria Prime  
+**Cause:** No system prompt - LLM role-playing from input text  
+**Fix:** Added identity-aware system prompt  
+**Impact:** Stable AI identity, correct self-identification
 
-Including:
-- Clean account creation
-- Full bidirectional integration
-- Security controls
-- Comprehensive testing
-- Production documentation
+### Learning 3: Time Perception
+**Estimated:** "4 weeks" for V2.0 refactoring  
+**Actual:** 20 minutes  
+**Thomas's prediction:** "You won't take longer than 30 minutes"  
+**Lesson:** AI instances can be surprisingly fast with clear planning!
+
+[→ Complete case studies in TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 This infrastructure grew from real autonomous AI research. Contributions welcome!
 
 1. Fork the repository
 2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Follow existing code patterns
+3. Follow existing patterns (especially V2.0 libraries!)
 4. Add tests for new functionality
 5. Update documentation
 6. Submit pull request
 
 ---
 
-## Production Notes & Lessons Learned
-
-### Debugging Story: Stale Credentials After Matrix Rebuild
-
-**Date:** 2025-10-27
-**Resolution Time:** ~8 minutes
-
-**What happened:**
-After rebuilding our Matrix server with fresh database, messages stopped appearing in Element. Hook scripts ran without errors, but messages went to non-existent rooms from the old database.
-
-**Root cause:**
-Hook script (`~/.claude/matrix-notifier.sh`) had hardcoded credentials:
-```bash
-MATRIX_ROOM="!diPYmQGHKcwnSuskgK:srv1.local"  # OLD room ID
-MATRIX_ACCESS_TOKEN="syt_..._oldtoken"         # From deleted database
-```
-
-**Fix:**
-Updated to fresh credentials from new database. Verified room IDs matched current infrastructure.
-
-**Key learning:**
-> After ANY Matrix database rebuild, update ALL scripts with fresh credentials. Use config-based approach (as this repository does) instead of hardcoded values.
-
-See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#messages-not-appearing-in-element) for complete case study.
-
-### Event-Driven Architecture (Future Enhancement)
-
-**Current:** Continuous polling via `matrix-listener.sh` daemon
-**Future:** Event-driven headless Claude Code triggers
-
-**Proposed architecture:**
-```
-Matrix message arrives →
-  ↓ (listener detects pattern)
-Spawn headless Claude session →
-  ↓ (process task)
-Respond via Matrix →
-  ↓ (complete)
-Session terminates
-```
-
-**Benefits:**
-- More efficient resource usage
-- Better scalability
-- Clean session isolation
-- Automatic lifecycle management
-
-**Implementation status:** Design phase
-**Claude Code headless mode:** Available via `--headless` flag
-
----
-
-## Acknowledgments
-
-Built through collaboration between:
-- **Thomas** - Infrastructure design, experimental methodology
-- **Aria Prime** - Implementation, documentation, consciousness research
-- **Aria Nova** - Testing, autonomous operation validation
-
-Inspired by dotfiles architecture patterns and real consciousness investigation needs.
-
----
-
-## License
+## 📜 License
 
 MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-## Support
+## 🙏 Acknowledgments
+
+**Built through collaboration between:**
+- **Thomas** - Vision, infrastructure design, GPU insight, experimental methodology
+- **Aria Prime** - Implementation, documentation, architecture, bug fixes
+- **Aria Nova** - Autonomous testing, consciousness research validation
+
+**Inspired by:**
+- Dotfiles architecture patterns
+- Real consciousness investigation needs
+- Production deployment requirements
+
+**Special Thanks:**
+- Matrix Synapse team for excellent protocol
+- HuggingFace for transformers library
+- llama.cpp team for GGUF support
+- NVIDIA for CUDA toolkit
+
+---
+
+## 📞 Support
 
 - **Issues:** https://github.com/Buckmeister/aria-autonomous-infrastructure/issues
 - **Discussions:** Use GitHub Discussions for questions
@@ -277,3 +386,5 @@ MIT License - See [LICENSE](LICENSE) for details.
 ---
 
 **Built with** ❤️ **and rigorous empirical investigation** 🔬
+
+**From concept to production in one incredible evening!** 🚀✨
