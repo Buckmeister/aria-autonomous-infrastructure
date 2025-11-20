@@ -1,6 +1,6 @@
 #!/bin/bash
 # launch-rocket.sh - Deploy a conversational AI instance with local LLM
-# 
+#
 # This script automates the complete deployment of a "Rocket" conversational AI:
 # - Creates Docker container with Ubuntu
 # - Installs PyTorch CPU + Transformers
@@ -16,6 +16,11 @@
 
 set -e
 
+# Load shared deployment utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
+source "$LIB_DIR/deployment_utils.sh"
+
 # Default values
 CONTAINER_NAME="rocket-instance"
 MODEL_NAME="Qwen/Qwen2.5-0.5B-Instruct"
@@ -27,29 +32,6 @@ MATRIX_USER=""
 MATRIX_TOKEN=""
 MATRIX_ROOM=""
 INSTANCE_NAME="Rocket"
-
-# Color output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $*"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $*"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $*"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $*"
-}
 
 show_usage() {
     cat << EOF
@@ -152,42 +134,30 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate required parameters
-if [[ -z "$MATRIX_SERVER" ]] || [[ -z "$MATRIX_USER" ]] || [[ -z "$MATRIX_TOKEN" ]] || [[ -z "$MATRIX_ROOM" ]]; then
-    log_error "Missing required Matrix configuration parameters"
+if ! validate_required_params MATRIX_SERVER MATRIX_USER MATRIX_TOKEN MATRIX_ROOM; then
     show_usage
     exit 1
 fi
 
+# Display configuration summary
 log_info "🚀 Rocket Deployment Configuration"
-echo "Container:       $CONTAINER_NAME"
-echo "Model:           $MODEL_NAME"
-echo "Inference Port:  $INFERENCE_PORT"
-echo "Memory Limit:    $MEMORY_LIMIT"
-echo "CPU Limit:       $CPU_LIMIT"
-echo "Matrix Server:   $MATRIX_SERVER"
-echo "Matrix User:     $MATRIX_USER"
-echo "Matrix Room:     $MATRIX_ROOM"
-echo "Instance Name:   $INSTANCE_NAME"
-echo
+display_config_summary \
+    "Container:       $CONTAINER_NAME" \
+    "Model:           $MODEL_NAME" \
+    "Inference Port:  $INFERENCE_PORT" \
+    "Memory Limit:    $MEMORY_LIMIT" \
+    "CPU Limit:       $CPU_LIMIT" \
+    "Matrix Server:   $MATRIX_SERVER" \
+    "Matrix User:     $MATRIX_USER" \
+    "Matrix Room:     $MATRIX_ROOM" \
+    "Instance Name:   $INSTANCE_NAME"
 
-# Check if Docker is running
-if ! docker info > /dev/null 2>&1; then
-    log_error "Docker is not running. Please start Docker first."
+# Validate Docker is running
+validate_docker
+
+# Check if container already exists and handle
+if ! remove_container_with_confirmation "$CONTAINER_NAME"; then
     exit 1
-fi
-
-# Check if container already exists
-if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    log_warn "Container '$CONTAINER_NAME' already exists"
-    read -p "Remove and recreate? (y/n) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        log_info "Removing existing container..."
-        docker rm -f "$CONTAINER_NAME"
-    else
-        log_error "Deployment cancelled"
-        exit 1
-    fi
 fi
 
 # Step 1: Create Docker container
@@ -346,8 +316,7 @@ done
 echo
 
 if [[ $WAIT_TIME -ge $MAX_WAIT ]]; then
-    log_error "Model loading timed out. Check logs with: docker exec $CONTAINER_NAME tail -50 /root/inference.log"
-    exit 1
+    exit_with_error "Model loading timed out. Check logs with: docker exec $CONTAINER_NAME tail -50 /root/inference.log"
 fi
 
 # Step 6: Clone aria-autonomous-infrastructure repo
@@ -358,16 +327,14 @@ log_success "Repository cloned"
 
 # Step 7: Create Matrix credentials
 log_info "🔐 Configuring Matrix credentials..."
-docker exec "$CONTAINER_NAME" bash -c "mkdir -p /root/aria-autonomous-infrastructure/config && cat > /root/aria-autonomous-infrastructure/config/matrix-credentials.json << 'MATRIX_EOF'
-{
-  \"homeserver\": \"$MATRIX_SERVER\",
-  \"user_id\": \"$MATRIX_USER\",
-  \"access_token\": \"$MATRIX_TOKEN\",
-  \"room_id\": \"$MATRIX_ROOM\",
-  \"instance_name\": \"$INSTANCE_NAME\"
-}
-MATRIX_EOF
-"
+
+# Create credentials file in temp, then copy to container
+TEMP_CREDS="$(mktemp)"
+create_matrix_credentials_file "$TEMP_CREDS" "$MATRIX_SERVER" "$MATRIX_USER" "$MATRIX_TOKEN" "$MATRIX_ROOM" "$INSTANCE_NAME"
+
+docker exec "$CONTAINER_NAME" bash -c "mkdir -p /root/aria-autonomous-infrastructure/config"
+docker cp "$TEMP_CREDS" "$CONTAINER_NAME:/root/aria-autonomous-infrastructure/config/matrix-credentials.json"
+rm -f "$TEMP_CREDS"
 
 log_success "Matrix credentials configured"
 
@@ -380,7 +347,7 @@ docker exec "$CONTAINER_NAME" bash -c "cd /root/aria-autonomous-infrastructure/b
 sleep 3
 
 # Verify listener is running
-if docker exec "$CONTAINER_NAME" ps aux | grep -q "[m]atrix-conversational-listener"; then
+if container_process_running "$CONTAINER_NAME" "matrix-conversational-listener"; then
     log_success "Conversational listener started"
 else
     log_warn "Listener may not have started. Check logs with: docker exec $CONTAINER_NAME tail -50 /root/conversational-listener.log"

@@ -1,11 +1,16 @@
 #!/bin/bash
 # launch-rocket-gpu.sh - Deploy GPU-accelerated Rocket via Docker Compose
-# 
+#
 # Deploys Rocket on remote Docker host with GPU support
 # Uses existing model files from LM Studio (no downloads!)
 # Supports rapid model switching via command-line
 
 set -e
+
+# Load shared deployment utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
+source "$LIB_DIR/deployment_utils.sh"
 
 # Defaults
 DOCKER_HOST_SSH="Aria@wks-bckx01"
@@ -20,18 +25,6 @@ MODEL_PATH="/models/LM-Studio/lmstudio-community/gemma-3-12b-it-GGUF/gemma-3-12b
 N_GPU_LAYERS="-1"  # -1 = all layers on GPU
 INFERENCE_PORT="8080"
 DEPLOY_DIR="/tmp/rocket-gpu-deploy"
-
-# Color output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
-log_success() { echo -e "${GREEN}[SUCCESS]${NC} $*"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
 show_usage() {
     cat << EOF
@@ -101,58 +94,46 @@ if [[ -n "$LIST_MODELS" ]]; then
 fi
 
 # Validate required parameters
-if [[ -z "$MATRIX_SERVER" ]] || [[ -z "$MATRIX_USER" ]] || [[ -z "$MATRIX_TOKEN" ]] || [[ -z "$MATRIX_ROOM" ]]; then
-    log_error "Missing required Matrix parameters"
+if ! validate_required_params MATRIX_SERVER MATRIX_USER MATRIX_TOKEN MATRIX_ROOM; then
     show_usage
     exit 1
 fi
 
+# Display configuration summary
 log_info "🚀 Rocket GPU Deployment"
-echo "Docker Host:      $DOCKER_HOST_SSH"
-echo "Model:            $MODEL_PATH"
-echo "GPU Layers:       $N_GPU_LAYERS"
-echo "Matrix Server:    $MATRIX_SERVER"
-echo "Matrix User:      $MATRIX_USER"
-echo "Matrix Room:      $MATRIX_ROOM"
-echo "Instance Name:    $INSTANCE_NAME"
-echo "Inference Port:   $INFERENCE_PORT"
-echo
+display_config_summary \
+    "Docker Host:      $DOCKER_HOST_SSH" \
+    "Model:            $MODEL_PATH" \
+    "GPU Layers:       $N_GPU_LAYERS" \
+    "Matrix Server:    $MATRIX_SERVER" \
+    "Matrix User:      $MATRIX_USER" \
+    "Matrix Room:      $MATRIX_ROOM" \
+    "Instance Name:    $INSTANCE_NAME" \
+    "Inference Port:   $INFERENCE_PORT"
 
 # Check SSH connectivity
-log_info "🔌 Testing SSH connection to $DOCKER_HOST_SSH..."
-if ! ssh -i "$DOCKER_HOST_KEY" "$DOCKER_HOST_SSH" "echo Connected" > /dev/null 2>&1; then
-    log_error "Cannot connect to $DOCKER_HOST_SSH"
-    exit 1
-fi
-log_success "SSH connection OK"
+test_ssh_connection "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY"
 
 # Create Matrix credentials file locally
 MATRIX_CONFIG_FILE="$(mktemp -d)/matrix-credentials.json"
-cat > "$MATRIX_CONFIG_FILE" << MATRIX_EOF
-{
-  "homeserver": "$MATRIX_SERVER",
-  "user_id": "$MATRIX_USER",
-  "access_token": "$MATRIX_TOKEN",
-  "room_id": "$MATRIX_ROOM",
-  "instance_name": "$INSTANCE_NAME"
-}
-MATRIX_EOF
+create_matrix_credentials_file "$MATRIX_CONFIG_FILE" "$MATRIX_SERVER" "$MATRIX_USER" "$MATRIX_TOKEN" "$MATRIX_ROOM" "$INSTANCE_NAME"
 
 log_success "Matrix credentials prepared"
 
 # Create deployment directory on remote host
 log_info "📁 Creating deployment directory on remote host..."
-ssh -i "$DOCKER_HOST_KEY" "$DOCKER_HOST_SSH" "mkdir -p $DEPLOY_DIR/config"
+ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "mkdir -p $DEPLOY_DIR/config"
 
 # Copy docker-compose files to remote host
 log_info "📤 Uploading Docker configuration..."
-scp -i "$DOCKER_HOST_KEY" -r \
+ssh_copy "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" \
     ~/Development/aria-autonomous-infrastructure/docker/* \
-    "$DOCKER_HOST_SSH:$DEPLOY_DIR/"
+    "$DEPLOY_DIR/"
 
 # Copy Matrix credentials
-scp -i "$DOCKER_HOST_KEY" "$MATRIX_CONFIG_FILE" \
-    "$DOCKER_HOST_SSH:$DEPLOY_DIR/config/matrix-credentials.json"
+ssh_copy "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" \
+    "$MATRIX_CONFIG_FILE" \
+    "$DEPLOY_DIR/config/matrix-credentials.json"
 
 rm -f "$MATRIX_CONFIG_FILE"
 
@@ -160,7 +141,7 @@ log_success "Configuration uploaded"
 
 # Create .env file on remote host
 log_info "⚙️  Creating environment configuration..."
-ssh -i "$DOCKER_HOST_KEY" "$DOCKER_HOST_SSH" "cat > $DEPLOY_DIR/.env" << ENV_EOF
+ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << 'ENV_EOF'
 MODEL_PATH=$MODEL_PATH
 N_GPU_LAYERS=$N_GPU_LAYERS
 N_CTX=4096
@@ -170,7 +151,7 @@ INFERENCE_PORT=$INFERENCE_PORT
 MODELS_DIR=/d/Models
 MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
-ENV_EOF
+ENV_EOF"
 
 log_success "Environment configured"
 
@@ -178,14 +159,7 @@ log_success "Environment configured"
 log_info "🐳 Deploying via Docker Compose..."
 log_info "   This may take a few minutes for first build..."
 
-ssh -i "$DOCKER_HOST_KEY" "$DOCKER_HOST_SSH" << REMOTE_EOF
-cd $DEPLOY_DIR
-docker-compose down 2>/dev/null || true
-docker-compose up --build -d
-echo "Waiting for services to start..."
-sleep 10
-docker-compose ps
-REMOTE_EOF
+ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cd $DEPLOY_DIR && docker-compose down 2>/dev/null || true && docker-compose up --build -d && echo 'Waiting for services to start...' && sleep 10 && docker-compose ps"
 
 log_success "🎉 Deployment complete!"
 echo
