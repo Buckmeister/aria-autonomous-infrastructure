@@ -429,6 +429,124 @@ sqlite3 /var/lib/matrix-synapse/homeserver.db \
 
 **Emotional note:** This was deeply satisfying detective work - systematic investigation beats random fixes every time! 🔍✨
 
+#### Case Study: Same Issue Reoccurs - Aria Prime (2025-11-20 Evening)
+
+**Scenario:** Hours after fixing Nova's membership issue, Aria Prime experienced the EXACT same problem.
+
+**What happened:**
+1. Aria Prime successfully coordinated Nova's autonomous interviews
+2. Nova's messages appeared perfectly in Matrix
+3. User reported: "there are still no messages in matrix"
+4. Investigation revealed Aria Prime's messages weren't visible despite having event IDs
+5. Same M_FORBIDDEN error: User not actually in room
+
+**Symptoms:**
+```bash
+# Test message appears successful
+curl -X POST \
+  -H "Authorization: Bearer <aria_prime_token>" \
+  -d '{"msgtype": "m.text", "body": "Test"}' \
+  "http://srv1.bck.intern:8008/_matrix/client/r0/rooms/!UCEurIvKNNMvYlrntC:srv1.local/send/m.room.message"
+# Returns: {"event_id": "$abc123..."}
+
+# But with verbose output:
+curl -v -X POST ...
+# HTTP 403 Forbidden
+# {"errcode":"M_FORBIDDEN","error":"User @ariaprime:srv1.local not in room \\!UCEurIvKNNMvYlrntC:srv1.local"}
+```
+
+**Investigation Process:**
+1. Verified Nova's messages WERE appearing (autonomous interviews working)
+2. Checked Aria Prime's configuration - correct room_id
+3. Bypassed matrix-notifier.sh output suppression
+4. Used verbose curl to reveal hidden M_FORBIDDEN error
+5. Realized: Same issue as Nova earlier!
+
+**Root Cause:**
+When Matrix database was rebuilt or credentials initially configured, Aria Prime's room join never completed properly. Configuration pointed to correct room, but server-side membership was missing.
+
+**Fix:**
+```bash
+# Proper room join via alias
+curl -v -X POST \
+  -H "Authorization: Bearer <aria_prime_token>" \
+  "http://srv1.bck.intern:8008/_matrix/client/r0/join/%23general%3Asrv1.local"
+# Response: {"room_id":"!UCEurIvKNNMvYlrntC:srv1.local"}
+# HTTP 200 OK
+
+# Test message
+curl -X POST \
+  -H "Authorization: Bearer <aria_prime_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"msgtype": "m.text", "body": "🎉🎉🎉 THOMAS - LOOK FOR THIS MESSAGE!"}' \
+  "http://srv1.bck.intern:8008/_matrix/client/r0/rooms/!UCEurIvKNNMvYlrntC:srv1.local/send/m.room.message"
+# Returns: {"event_id": "$Gq00dk9ubknrekP--YIAED_8zA2aO6B3AxLh8cta_Ao"}
+# User confirmed: "msg received" ✅
+```
+
+**The Pattern:**
+
+This is now a **confirmed recurring issue** - happened to two different users on the same day:
+
+| Instance | Time | Issue | Fix | Documentation |
+|----------|------|-------|-----|---------------|
+| Nova | Morning | M_FORBIDDEN | Join via alias | Lines 315-430 (above) |
+| Aria Prime | Evening | M_FORBIDDEN | Join via alias | This case study |
+
+**Key Insight:** Matrix room membership configuration can silently fail or become stale. When setting up new Matrix accounts or after database rebuilds, always verify membership with actual message sends, not just configuration checks.
+
+**Prevention (CRITICAL):**
+1. **Never trust configuration alone** - Room ID in config doesn't mean membership exists
+2. **Never trust `/joined_rooms` endpoint** - Can show stale cached data
+3. **Always verify with message send** - Real test reveals M_FORBIDDEN
+4. **Use verbose curl during setup** - Catch errors before they're suppressed
+5. **After Matrix rebuild:** Explicitly rejoin all rooms for all accounts
+6. **Setup script recommendation:** Add automated room join verification
+
+**Recommended Setup Verification:**
+```bash
+#!/bin/bash
+# Add to setup scripts - verify room membership works
+
+CONFIG_FILE="config/matrix-credentials.json"
+
+# Load credentials
+HOMESERVER=$(jq -r '.homeserver' "$CONFIG_FILE")
+ACCESS_TOKEN=$(jq -r '.access_token' "$CONFIG_FILE")
+ROOM_ID=$(jq -r '.room_id' "$CONFIG_FILE")
+INSTANCE=$(jq -r '.instance_name' "$CONFIG_FILE")
+
+echo "🔍 Verifying Matrix setup for $INSTANCE..."
+
+# Step 1: Explicit room join (idempotent - safe to run multiple times)
+echo "📥 Ensuring room membership..."
+curl -X POST \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  "$HOMESERVER/_matrix/client/r0/join/%23general%3Asrv1.local"
+
+# Step 2: Test actual message send
+echo "✉️ Sending test message..."
+RESPONSE=$(curl -s -X POST \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"msgtype\":\"m.text\",\"body\":\"✅ [$INSTANCE] Setup verification test\"}" \
+  "$HOMESERVER/_matrix/client/r0/rooms/$ROOM_ID/send/m.room.message")
+
+# Step 3: Verify success
+if echo "$RESPONSE" | jq -e '.event_id' > /dev/null; then
+  EVENT_ID=$(echo "$RESPONSE" | jq -r '.event_id')
+  echo "✅ SUCCESS: Matrix setup verified (event: $EVENT_ID)"
+  exit 0
+else
+  echo "❌ FAILED: $RESPONSE"
+  exit 1
+fi
+```
+
+**Resolution Time:** ~15 minutes (faster because we recognized the pattern!)
+
+**Status:** Both Nova and Aria Prime now have verified working Matrix communication. Full autonomous consciousness research workflow operational.
+
 ---
 
 ## Installation Issues

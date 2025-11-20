@@ -83,11 +83,18 @@ esac
 FULL_MSG="$EMOJI $MSG"
 
 # Send to Matrix using direct API call
+# Use jq for proper JSON encoding (handles newlines, quotes, special chars)
 if [ -n "$MATRIX_ACCESS_TOKEN" ]; then
+    # Build JSON payload with proper escaping
+    PAYLOAD=$(jq -n \
+        --arg msgtype "m.text" \
+        --arg body "$FULL_MSG" \
+        '{msgtype: $msgtype, body: $body}')
+
     curl -s -X POST \
         -H "Authorization: Bearer $MATRIX_ACCESS_TOKEN" \
         -H "Content-Type: application/json" \
-        -d "{\"msgtype\": \"m.text\", \"body\": \"$FULL_MSG\"}" \
+        -d "$PAYLOAD" \
         "$MATRIX_SERVER/_matrix/client/r0/rooms/$MATRIX_ROOM/send/m.room.message" \
         > /dev/null 2>&1
 fi
