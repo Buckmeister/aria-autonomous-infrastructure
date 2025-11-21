@@ -1,0 +1,62 @@
+# Development Environment Overlay
+# Optimized for small clusters and fast iteration
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base configuration
+bases:
+  - ../../base
+
+# Dev-specific resources
+resources:
+  - ../../rocket-ollama/configmap.yaml
+  - ../../rocket-ollama/pvc.yaml
+  - ../../rocket-ollama/deployment.yaml
+  - ../../rocket-ollama/service.yaml
+
+# Namespace override
+namespace: rocket-dev
+
+# Dev-specific labels
+commonLabels:
+  environment: dev
+
+# Patches for dev environment
+patches:
+  # Reduce replicas for dev
+  - target:
+      kind: Deployment
+      name: rocket-ollama
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+  # Use smaller model for dev
+  - target:
+      kind: ConfigMap
+      name: rocket-ollama-config
+    patch: |-
+      - op: replace
+        path: /data/MODEL_NAME
+        value: "qwen2.5:0.5b"
+
+  # Smaller PVC for dev
+  - target:
+      kind: PersistentVolumeClaim
+      name: ollama-models
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: "3Gi"
+
+# Name prefix for dev resources
+namePrefix: dev-
+
+# Configure image pull policy for dev
+images:
+  - name: ollama/ollama
+    newTag: latest
+  - name: ubuntu
+    newTag: "22.04"

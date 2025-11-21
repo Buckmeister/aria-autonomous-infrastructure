@@ -1,0 +1,82 @@
+# HTTPS Ingress for Rocket Ollama
+# Exposes the Ollama API via HTTPS with TLS encryption (production-ready)
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rocket-ollama-https
+  namespace: rocket
+  labels:
+    app: rocket-ollama
+    component: ingress-secure
+  annotations:
+    # Nginx ingress controller annotations
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+
+    # SSL/TLS configuration
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+
+    # Optional: Enable CORS for API access
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://your-frontend-domain.com"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+
+    # Optional: cert-manager for automatic TLS cert management
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - rocket.yourdomain.com  # Change to your actual domain
+      secretName: rocket-ollama-tls  # TLS certificate secret
+  rules:
+    - host: rocket.yourdomain.com  # Change to your actual domain
+      http:
+        paths:
+          # Ollama API endpoint
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rocket-ollama
+                port:
+                  number: 11434
+
+---
+# Note: HTTPS Ingress Setup
+#
+# This Ingress provides secure HTTPS access to the Ollama API.
+#
+# **TLS Certificate Options:**
+#
+# Option 1: cert-manager with Let's Encrypt (Recommended for production)
+# - Install cert-manager: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+# - Create ClusterIssuer (see cert-issuer.yaml)
+# - cert-manager will automatically provision and renew certificates
+#
+# Option 2: Self-signed certificate (Dev/test only)
+# - Generate certificate: openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+#     -keyout tls.key -out tls.crt -subj "/CN=rocket.yourdomain.com"
+# - Create secret: kubectl create secret tls rocket-ollama-tls \
+#     --cert=tls.crt --key=tls.key -n rocket
+#
+# Option 3: Existing certificate
+# - kubectl create secret tls rocket-ollama-tls \
+#     --cert=path/to/cert.crt --key=path/to/private.key -n rocket
+#
+# **Testing:**
+# 1. Update DNS or /etc/hosts:
+#    echo "192.168.1.100  rocket.yourdomain.com" | sudo tee -a /etc/hosts
+#
+# 2. Test HTTPS access:
+#    curl https://rocket.yourdomain.com/api/tags
+#
+# 3. Test inference:
+#    curl https://rocket.yourdomain.com/v1/chat/completions \
+#      -H "Content-Type: application/json" \
+#      -d '{"model": "qwen2.5:0.5b", "messages": [{"role": "user", "content": "Hello!"}]}'

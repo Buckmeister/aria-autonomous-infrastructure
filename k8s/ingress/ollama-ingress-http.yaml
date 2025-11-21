@@ -1,0 +1,61 @@
+# HTTP Ingress for Rocket Ollama
+# Exposes the Ollama API via HTTP (insecure, for development only)
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rocket-ollama-http
+  namespace: rocket
+  labels:
+    app: rocket-ollama
+    component: ingress
+  annotations:
+    # Nginx ingress controller annotations
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+
+    # Optional: Enable CORS for API access
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, OPTIONS"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: rocket-ollama.local  # Change to your domain
+      http:
+        paths:
+          # Ollama API endpoint
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rocket-ollama
+                port:
+                  number: 11434
+
+---
+# Note: HTTP Ingress Usage
+#
+# This Ingress exposes the Ollama API over plain HTTP.
+#
+# **WARNING**: HTTP is unencrypted and NOT suitable for production!
+# Use this only for:
+# - Local development
+# - Testing in isolated networks
+# - Internal-only access behind a firewall
+#
+# For production, use the HTTPS Ingress (ollama-ingress-https.yaml)
+#
+# Testing:
+# 1. Add to /etc/hosts:
+#    echo "192.168.1.100  rocket-ollama.local" | sudo tee -a /etc/hosts
+#
+# 2. Test API access:
+#    curl http://rocket-ollama.local/api/tags
+#
+# 3. Test inference:
+#    curl http://rocket-ollama.local/v1/chat/completions \
+#      -H "Content-Type: application/json" \
+#      -d '{"model": "qwen2.5:0.5b", "messages": [{"role": "user", "content": "Hello!"}]}'

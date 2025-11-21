@@ -1,0 +1,66 @@
+# Rocket Ollama - Service
+# Exposes Ollama API for internal cluster access
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocket-ollama
+  namespace: rocket
+  labels:
+    app: rocket-ollama
+    component: inference
+spec:
+  type: ClusterIP  # Internal cluster access only
+  ports:
+    - name: ollama-api
+      port: 11434
+      targetPort: 11434
+      protocol: TCP
+  selector:
+    app: rocket-ollama
+
+---
+# Optional: NodePort Service for external access (dev/testing only)
+# Uncomment this section if you want to access Ollama API from outside the cluster
+#
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: rocket-ollama-external
+#   namespace: rocket
+#   labels:
+#     app: rocket-ollama
+#     component: inference-external
+# spec:
+#   type: NodePort
+#   ports:
+#     - name: ollama-api
+#       port: 11434
+#       targetPort: 11434
+#       nodePort: 30434  # Access via http://<node-ip>:30434
+#       protocol: TCP
+#   selector:
+#     app: rocket-ollama
+
+---
+# Note: Service Exposure Options
+#
+# 1. ClusterIP (default, recommended):
+#    - Internal cluster access only
+#    - Best for Matrix listener communicating with Ollama
+#    - Access: http://rocket-ollama.rocket.svc.cluster.local:11434
+#
+# 2. NodePort (dev/testing):
+#    - Exposes on all cluster nodes on port 30000-32767
+#    - Access: http://<any-node-ip>:30434
+#    - Good for development and debugging
+#
+# 3. LoadBalancer (production with MetalLB):
+#    - Exposes via external load balancer IP
+#    - Requires MetalLB or cloud provider LoadBalancer
+#    - Best for production deployments
+#
+# 4. Ingress (production recommended):
+#    - HTTP/HTTPS routing with hostname
+#    - Example: https://ollama.rocket.example.com
+#    - Requires Ingress Controller (nginx, traefik, etc.)

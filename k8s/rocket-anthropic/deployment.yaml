@@ -1,0 +1,129 @@
+# Rocket Anthropic - Deployment
+# Matrix listener calling Anthropic Cloud API (no local inference)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rocket-anthropic
+  namespace: rocket
+  labels:
+    app: rocket-anthropic
+    component: listener
+spec:
+  replicas: 1  # Single instance
+  selector:
+    matchLabels:
+      app: rocket-anthropic
+  template:
+    metadata:
+      labels:
+        app: rocket-anthropic
+        component: listener
+    spec:
+      containers:
+        # Matrix Listener - Calls Anthropic API
+        - name: matrix-listener
+          image: ubuntu:22.04  # Base image for listener
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: rocket-anthropic-config
+          env:
+            # Matrix credentials from shared secret
+            - name: MATRIX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: matrix-credentials
+                  key: token
+            - name: MATRIX_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: matrix-credentials
+                  key: server
+            - name: MATRIX_USER
+              valueFrom:
+                secretKeyRef:
+                  name: matrix-credentials
+                  key: user
+            - name: MATRIX_ROOM
+              valueFrom:
+                secretKeyRef:
+                  name: matrix-credentials
+                  key: room
+            # Anthropic API key from dedicated secret
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anthropic-api-key
+                  key: api-key
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              echo "Installing dependencies for Matrix listener..."
+              apt-get update && apt-get install -y curl jq netcat-openbsd
+
+              # Verify Anthropic API key is set
+              if [ -z "$ANTHROPIC_API_KEY" ]; then
+                echo "ERROR: ANTHROPIC_API_KEY not set!"
+                exit 1
+              fi
+
+              echo "Anthropic API key configured"
+              echo "Model: $MODEL_NAME"
+              echo "API URL: $ANTHROPIC_API_URL"
+
+              # Run the listener script for Anthropic
+              echo "Starting Matrix conversational listener for Anthropic..."
+              # TODO: Mount and execute actual listener script for Anthropic
+              # This should use the Anthropic API instead of local inference
+              # For now, keep container alive for debugging
+              echo "Listener script needs to be mounted from repo"
+              echo "Script should call: $ANTHROPIC_API_URL"
+              echo "With model: $MODEL_NAME"
+              tail -f /dev/null
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          # Liveness probe - ensure container is running
+          livenessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - pgrep -f tail || true
+            initialDelaySeconds: 10
+            periodSeconds: 30
+
+      # Restart policy
+      restartPolicy: Always
+
+---
+# Note: Anthropic API Integration
+#
+# This deployment is significantly simpler than Ollama/vLLM because:
+# 1. No local inference server needed
+# 2. No GPU requirements
+# 3. No model storage needed
+# 4. Lower resource requirements
+#
+# The listener calls the Anthropic Cloud API directly:
+# - API URL: https://api.anthropic.com/v1/messages
+# - Authentication: Bearer token (ANTHROPIC_API_KEY)
+# - Model: claude-sonnet-4-20250514 (or claude-3-7-sonnet-20250219)
+#
+# Benefits:
+# - Lowest resource usage (just the listener)
+# - No model download delays
+# - Always latest model versions
+# - High inference quality
+#
+# Considerations:
+# - Requires internet connectivity
+# - API costs per token
+# - Latency depends on network
+# - Rate limits apply

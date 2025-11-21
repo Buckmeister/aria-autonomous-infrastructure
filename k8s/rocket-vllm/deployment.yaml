@@ -1,0 +1,197 @@
+# Rocket vLLM - Deployment
+# Runs vLLM inference server with GPU support + Matrix listener
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rocket-vllm
+  namespace: rocket
+  labels:
+    app: rocket-vllm
+    component: inference
+spec:
+  replicas: 1  # Single instance for now
+  selector:
+    matchLabels:
+      app: rocket-vllm
+  template:
+    metadata:
+      labels:
+        app: rocket-vllm
+        component: inference
+    spec:
+      # Node Selection - Schedule on GPU nodes only
+      nodeSelector:
+        kubernetes.io/hostname: worker-1  # Replace with actual GPU node name
+        # Alternative: Use label-based selection
+        # accelerator: nvidia-gpu
+
+      # Container definitions
+      containers:
+        # vLLM Inference Server - GPU-accelerated
+        - name: vllm-server
+          image: vllm/vllm-openai:latest
+          imagePullPolicy: Always
+          ports:
+            - name: vllm-api
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: rocket-vllm-config
+          env:
+            # NVIDIA GPU configuration
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: "all"
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: "compute,utility"
+          command:
+            - "python"
+            - "-m"
+            - "vllm.entrypoints.openai.api_server"
+          args:
+            - "--model"
+            - "$(MODEL_NAME)"
+            - "--host"
+            - "$(VLLM_HOST)"
+            - "--port"
+            - "$(VLLM_PORT)"
+            - "--tensor-parallel-size"
+            - "$(TENSOR_PARALLEL_SIZE)"
+            - "--max-model-len"
+            - "$(MAX_MODEL_LEN)"
+            - "--gpu-memory-utilization"
+            - "$(GPU_MEMORY_UTIL)"
+            - "--disable-log-requests"
+          # GPU Resource requests
+          resources:
+            requests:
+              memory: "8Gi"
+              cpu: "2000m"
+              nvidia.com/gpu: "1"  # Request 1 GPU
+            limits:
+              memory: "16Gi"
+              cpu: "4000m"
+              nvidia.com/gpu: "1"  # Limit to 1 GPU
+          # Readiness probe - check if vLLM API is responding
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Liveness probe - ensure vLLM is still running
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 180  # Allow time for model download (can be large)
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          # Volume mounts for shared memory (improves performance)
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+
+        # Matrix Listener - Connects Matrix to vLLM
+        - name: matrix-listener
+          image: ubuntu:22.04  # Base image for listener
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: rocket-vllm-config
+          env:
+            # Matrix credentials from secret
+            - name: MATRIX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: matrix-credentials
+                  key: token
+            - name: MATRIX_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: matrix-credentials
+                  key: server
+            - name: MATRIX_USER
+              valueFrom:
+                secretKeyRef:
+                  name: matrix-credentials
+                  key: user
+            - name: MATRIX_ROOM
+              valueFrom:
+                secretKeyRef:
+                  name: matrix-credentials
+                  key: room
+            # Point to local vLLM server
+            - name: INFERENCE_URL
+              value: "http://localhost:8080/v1/chat/completions"
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              echo "Installing dependencies for Matrix listener..."
+              apt-get update && apt-get install -y curl jq netcat-openbsd
+
+              # Wait for vLLM to be ready
+              echo "Waiting for vLLM server to be ready..."
+              while ! nc -z localhost 8080; do
+                echo "Waiting for vLLM..."
+                sleep 5
+              done
+              echo "vLLM is ready!"
+
+              # Run the listener script
+              echo "Starting Matrix conversational listener..."
+              # TODO: Mount and execute actual listener script
+              # For now, keep container alive for debugging
+              echo "Listener script needs to be mounted from repo"
+              tail -f /dev/null
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+      # Volumes
+      volumes:
+        # Shared memory for vLLM (improves performance)
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+
+      # Restart policy
+      restartPolicy: Always
+
+---
+# Note: GPU Node Affinity
+#
+# For more sophisticated scheduling, replace nodeSelector with affinity:
+#
+# affinity:
+#   nodeAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       nodeSelectorTerms:
+#       - matchExpressions:
+#         - key: accelerator
+#           operator: In
+#           values:
+#           - nvidia-gpu
+#     preferredDuringSchedulingIgnoredDuringExecution:
+#     - weight: 100
+#       preference:
+#         matchExpressions:
+#         - key: gpu-memory
+#           operator: Gt
+#           values:
+#           - "8000"  # Prefer nodes with >8GB GPU memory
+#
+# This allows for:
+# - Required scheduling on GPU nodes
+# - Preferred scheduling on nodes with more GPU memory
+# - Fallback to any GPU node if preferred not available

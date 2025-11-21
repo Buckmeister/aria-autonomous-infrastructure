@@ -1,0 +1,23 @@
+# Rocket Anthropic - ConfigMap
+# Configuration for Anthropic API integration
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rocket-anthropic-config
+  namespace: rocket
+  labels:
+    app: rocket-anthropic
+    component: config
+data:
+  # Anthropic Model Configuration
+  MODEL_NAME: "claude-sonnet-4-20250514"  # Or claude-3-7-sonnet-20250219
+
+  # Anthropic API Configuration
+  ANTHROPIC_API_URL: "https://api.anthropic.com/v1/messages"
+
+  # Logging
+  LOG_FILE: "/var/log/conversational-listener.log"
+
+  # Instance identification
+  INSTANCE_NAME: "Rocket-Anthropic-K8s"

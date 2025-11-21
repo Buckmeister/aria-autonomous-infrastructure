@@ -1,0 +1,92 @@
+# Resource Quota and Limits for Rocket Namespace
+# Controls resource usage across all Rocket deployments
+
+---
+# ResourceQuota - Limits total resource consumption in the namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: rocket-quota
+  namespace: rocket
+spec:
+  hard:
+    # Total CPU and memory limits
+    requests.cpu: "20"      # 20 CPU cores total
+    requests.memory: "64Gi" # 64GB RAM total
+    limits.cpu: "40"        # 40 CPU cores max
+    limits.memory: "128Gi"  # 128GB RAM max
+
+    # GPU limits (if NVIDIA device plugin installed)
+    requests.nvidia.com/gpu: "4"  # Max 4 GPUs total
+
+    # Storage limits
+    persistentvolumeclaims: "10"  # Max 10 PVCs
+    requests.storage: "100Gi"     # 100GB storage total
+
+    # Pod limits
+    pods: "20"  # Max 20 pods in namespace
+
+    # Service limits
+    services: "10"
+    services.nodeports: "5"  # Max 5 NodePort services
+
+---
+# LimitRange - Sets default and max limits for individual pods/containers
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: rocket-limits
+  namespace: rocket
+spec:
+  limits:
+    # Container-level limits
+    - type: Container
+      default:  # Default limits if not specified
+        cpu: "2"
+        memory: "4Gi"
+      defaultRequest:  # Default requests if not specified
+        cpu: "500m"
+        memory: "1Gi"
+      max:  # Maximum allowed
+        cpu: "8"
+        memory: "32Gi"
+        nvidia.com/gpu: "2"
+      min:  # Minimum required
+        cpu: "100m"
+        memory: "128Mi"
+
+    # Pod-level limits (sum of all containers)
+    - type: Pod
+      max:
+        cpu: "16"
+        memory: "64Gi"
+        nvidia.com/gpu: "2"
+      min:
+        cpu: "100m"
+        memory: "128Mi"
+
+    # PVC limits
+    - type: PersistentVolumeClaim
+      max:
+        storage: "20Gi"  # Max 20GB per PVC
+      min:
+        storage: "1Gi"   # Min 1GB per PVC
+
+---
+# Note: Adjusting Resource Limits
+#
+# These limits are starting points and should be adjusted based on:
+# 1. Available cluster resources
+# 2. Expected workload
+# 3. Number of concurrent deployments
+#
+# For development/testing clusters, you may want to:
+# - Reduce total quotas
+# - Lower max limits per container
+# - Allow more flexibility
+#
+# For production clusters, you should:
+# - Set quotas based on capacity planning
+# - Enforce strict limits
+# - Monitor actual usage
+# - Implement alerts for quota approaching limits

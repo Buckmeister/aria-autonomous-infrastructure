@@ -1,0 +1,43 @@
+# Rocket Ollama - ConfigMap
+# Configuration for Ollama server and Matrix listener
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rocket-ollama-config
+  namespace: rocket
+  labels:
+    app: rocket-ollama
+    component: config
+data:
+  # Ollama Configuration
+  MODEL_NAME: "qwen2.5:0.5b"
+  OLLAMA_PORT: "11434"
+
+  # Inference URL for Matrix listener
+  INFERENCE_URL: "http://localhost:11434/v1/chat/completions"
+
+  # Logging
+  LOG_FILE: "/var/log/conversational-listener.log"
+
+  # Instance identification
+  INSTANCE_NAME: "Rocket-Ollama-K8s"
+
+---
+# Matrix Listener Script ConfigMap
+# This mounts the actual listener script
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rocket-listener-script
+  namespace: rocket
+  labels:
+    app: rocket-ollama
+    component: listener-script
+data:
+  matrix-conversational-listener.sh: |
+    #!/bin/bash
+    # This is a placeholder - mount the actual script from the repo
+    # See deployment.yaml for volume mount from host path
+    echo "Listener script should be mounted from host"
+    exit 1

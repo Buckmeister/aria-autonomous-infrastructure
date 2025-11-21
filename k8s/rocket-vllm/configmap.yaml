@@ -1,0 +1,32 @@
+# Rocket vLLM - ConfigMap
+# Configuration for vLLM server and Matrix listener
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rocket-vllm-config
+  namespace: rocket
+  labels:
+    app: rocket-vllm
+    component: config
+data:
+  # vLLM Model Configuration
+  MODEL_NAME: "Qwen/Qwen2.5-3B-Instruct"
+
+  # vLLM Server Configuration
+  VLLM_HOST: "0.0.0.0"
+  VLLM_PORT: "8080"
+
+  # GPU Configuration
+  TENSOR_PARALLEL_SIZE: "1"  # Number of GPUs for tensor parallelism
+  GPU_MEMORY_UTIL: "0.9"     # GPU memory utilization (0.0-1.0)
+  MAX_MODEL_LEN: "4096"      # Maximum sequence length
+
+  # Inference URL for Matrix listener
+  INFERENCE_URL: "http://localhost:8080/v1/chat/completions"
+
+  # Logging
+  LOG_FILE: "/var/log/conversational-listener.log"
+
+  # Instance identification
+  INSTANCE_NAME: "Rocket-vLLM-K8s"

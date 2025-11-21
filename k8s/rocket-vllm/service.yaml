@@ -1,0 +1,43 @@
+# Rocket vLLM - Service
+# Exposes vLLM API for internal cluster access
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: rocket-vllm
+  namespace: rocket
+  labels:
+    app: rocket-vllm
+    component: inference
+spec:
+  type: ClusterIP  # Internal cluster access only
+  ports:
+    - name: vllm-api
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app: rocket-vllm
+
+---
+# Optional: NodePort Service for external access (dev/testing only)
+# Uncomment this section if you want to access vLLM API from outside the cluster
+#
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: rocket-vllm-external
+#   namespace: rocket
+#   labels:
+#     app: rocket-vllm
+#     component: inference-external
+# spec:
+#   type: NodePort
+#   ports:
+#     - name: vllm-api
+#       port: 8080
+#       targetPort: 8080
+#       nodePort: 30080  # Access via http://<node-ip>:30080
+#       protocol: TCP
+#   selector:
+#     app: rocket-vllm

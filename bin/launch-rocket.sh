@@ -30,6 +30,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$SCRIPT_DIR/lib"
 source "$LIB_DIR/deployment_utils.sh"
 
+# Load Matrix admin library for automatic user registration
+source "$LIB_DIR/matrix_core.sh"
+source "$LIB_DIR/matrix_admin.sh"
+
 # ============================================================================
 # Default Configuration
 # ============================================================================
@@ -79,6 +83,10 @@ MATRIX_USER=""
 MATRIX_TOKEN=""
 MATRIX_ROOM=""
 
+# Matrix auto-registration
+AUTO_REGISTER_MATRIX_USER=false
+REGISTERED_MATRIX_USER=""  # Stores user_id if auto-registered (for cleanup)
+
 # SSH settings (for remote deployment)
 DOCKER_HOST_SSH=""
 DOCKER_HOST_KEY="$HOME/.aria/ssh/aria_wks-bckx01"
@@ -99,10 +107,13 @@ Universal Rocket deployment supporting CPU/GPU, local/remote, and multiple deplo
                         Command-line options override config file values
 
 === Required Options ===
-  --matrix-server URL    Matrix homeserver (e.g., http://srv1:8008)
-  --matrix-user ID       Matrix user ID (e.g., @rocket:srv1.local)
-  --matrix-token TOKEN   Matrix access token
-  --matrix-room ID       Matrix room ID (e.g., '!abc:srv1.local')
+  --matrix-server URL          Matrix homeserver (e.g., http://srv1:8008)
+  --matrix-user ID             Matrix user ID (e.g., @rocket:srv1.local)
+  --matrix-token TOKEN         Matrix access token
+  --matrix-room ID             Matrix room ID (e.g., '!abc:srv1.local')
+  --auto-register-matrix-user  Auto-create unique Matrix user for this deployment
+                               (requires admin token in ~/.aria/matrix-admin-token)
+                               User will be auto-deleted on shutdown
 
 === Deployment Mode ===
   --use-gpu             Enable GPU acceleration (automatically enables Docker Compose)
@@ -326,6 +337,7 @@ while [[ $# -gt 0 ]]; do
         --matrix-user) MATRIX_USER="$2"; shift 2 ;;
         --matrix-token) MATRIX_TOKEN="$2"; shift 2 ;;
         --matrix-room) MATRIX_ROOM="$2"; shift 2 ;;
+        --auto-register-matrix-user) AUTO_REGISTER_MATRIX_USER=true; shift 1 ;;
 
         # Help
         --help) show_usage; exit 0 ;;
@@ -366,6 +378,68 @@ detect_backend() {
 # ============================================================================
 # Validation & Setup
 # ============================================================================
+
+# ============================================================================
+# Matrix Auto-Registration (if enabled)
+# ============================================================================
+
+if [[ "$AUTO_REGISTER_MATRIX_USER" == "true" ]]; then
+    log_info "Auto-registering Matrix user for this deployment..."
+
+    # Load Matrix config (server and room still required)
+    if [[ -z "$MATRIX_SERVER" ]] || [[ -z "$MATRIX_ROOM" ]]; then
+        log_error "Matrix server and room are required for auto-registration"
+        log_error "Use --matrix-server and --matrix-room"
+        exit 1
+    fi
+
+    # Temporarily load Matrix config to enable library functions
+    export MATRIX_SERVER
+    export MATRIX_ROOM
+    export MATRIX_USER_ID="${MATRIX_USER:-@temp:temp}"  # Temporary, will be replaced
+    export MATRIX_ACCESS_TOKEN="${MATRIX_TOKEN:-temp}"
+
+    # Extract domain from Matrix server
+    # Assuming srv1.local from server URL like http://srv1:8008
+    MATRIX_DOMAIN=$(echo "$MATRIX_SERVER" | sed -E 's|https?://([^:/]+).*|\1.local|')
+    log_debug "Detected Matrix domain: $MATRIX_DOMAIN"
+
+    # Generate unique suffix from hostname and backend
+    HOSTNAME_SUFFIX=$(hostname -s 2>/dev/null || echo "local")
+    BACKEND_SUFFIX="${BACKEND_MODE}-${HOSTNAME_SUFFIX}"
+
+    # Register new Rocket user
+    log_info "Registering user for backend: $BACKEND_MODE on $HOSTNAME_SUFFIX"
+
+    REGISTRATION_RESULT=$(register_rocket_user "$BACKEND_MODE" "$BACKEND_SUFFIX" "$MATRIX_DOMAIN")
+
+    if [[ $? -ne 0 ]] || [[ -z "$REGISTRATION_RESULT" ]]; then
+        log_error "Failed to register Matrix user"
+        log_error "Make sure admin token is configured in ~/.aria/matrix-admin-token"
+        exit 1
+    fi
+
+    # Extract credentials from JSON result
+    MATRIX_USER=$(echo "$REGISTRATION_RESULT" | grep -o '"user_id":"[^"]*' | cut -d'"' -f4)
+    MATRIX_TOKEN=$(echo "$REGISTRATION_RESULT" | grep -o '"access_token":"[^"]*' | cut -d'"' -f4)
+
+    # Store for cleanup
+    REGISTERED_MATRIX_USER="$MATRIX_USER"
+
+    log_success "Matrix user registered: $MATRIX_USER"
+    log_debug "Access token obtained"
+
+    # Setup cleanup trap to delete user on exit
+    cleanup_matrix_user() {
+        if [[ -n "$REGISTERED_MATRIX_USER" ]]; then
+            log_info "Cleaning up auto-registered Matrix user: $REGISTERED_MATRIX_USER"
+            # Reload config for cleanup
+            export MATRIX_SERVER MATRIX_USER_ID MATRIX_ACCESS_TOKEN MATRIX_ROOM
+            delete_rocket_user "$REGISTERED_MATRIX_USER" || log_warn "Failed to delete Matrix user"
+        fi
+    }
+    trap cleanup_matrix_user EXIT INT TERM
+fi
 
 # Validate required Matrix parameters
 if ! validate_required_params MATRIX_SERVER MATRIX_USER MATRIX_TOKEN MATRIX_ROOM; then

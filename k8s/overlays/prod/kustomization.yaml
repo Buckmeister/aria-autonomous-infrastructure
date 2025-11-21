@@ -1,0 +1,91 @@
+# Production Environment Overlay
+# Full production configuration with HA, larger models, and production-grade settings
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base configuration
+bases:
+  - ../../base
+
+# Production-specific resources
+resources:
+  - ../../rocket-ollama/configmap.yaml
+  - ../../rocket-ollama/pvc.yaml
+  - ../../rocket-ollama/deployment.yaml
+  - ../../rocket-ollama/service.yaml
+
+# Namespace override
+namespace: rocket-prod
+
+# Production-specific labels
+commonLabels:
+  environment: prod
+
+# Patches for production environment
+patches:
+  # High availability - 3 replicas
+  - target:
+      kind: Deployment
+      name: rocket-ollama
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 3
+
+  # Use production-grade model
+  - target:
+      kind: ConfigMap
+      name: rocket-ollama-config
+    patch: |-
+      - op: replace
+        path: /data/MODEL_NAME
+        value: "qwen2.5:3b"
+
+  # Large PVC for production
+  - target:
+      kind: PersistentVolumeClaim
+      name: ollama-models
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: "15Gi"
+
+  # Production resource limits (larger model needs more memory)
+  - target:
+      kind: Deployment
+      name: rocket-ollama
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "2Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "4Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: "1000m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "2000m"
+
+  # Add pod disruption budget for HA
+  - target:
+      kind: Deployment
+      name: rocket-ollama
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/annotations
+        value:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "11434"
+
+# Name prefix for production resources
+namePrefix: prod-
+
+# Use pinned image tags for production stability
+images:
+  - name: ollama/ollama
+    newTag: "0.1.29"  # Pinned version for production
+  - name: ubuntu
+    newTag: "22.04"

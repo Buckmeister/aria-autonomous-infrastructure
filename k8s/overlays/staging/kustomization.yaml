@@ -1,0 +1,74 @@
+# Staging Environment Overlay
+# Mirrors production configuration at reduced scale for pre-production testing
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base configuration
+bases:
+  - ../../base
+
+# Staging-specific resources
+resources:
+  - ../../rocket-ollama/configmap.yaml
+  - ../../rocket-ollama/pvc.yaml
+  - ../../rocket-ollama/deployment.yaml
+  - ../../rocket-ollama/service.yaml
+
+# Namespace override
+namespace: rocket-staging
+
+# Staging-specific labels
+commonLabels:
+  environment: staging
+
+# Patches for staging environment
+patches:
+  # Multiple replicas for staging (test HA)
+  - target:
+      kind: Deployment
+      name: rocket-ollama
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+
+  # Use medium-sized model for staging
+  - target:
+      kind: ConfigMap
+      name: rocket-ollama-config
+    patch: |-
+      - op: replace
+        path: /data/MODEL_NAME
+        value: "qwen2.5:1.5b"
+
+  # Medium PVC for staging
+  - target:
+      kind: PersistentVolumeClaim
+      name: ollama-models
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: "8Gi"
+
+  # Increase resources for staging (larger model)
+  - target:
+      kind: Deployment
+      name: rocket-ollama
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: "1.5Gi"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "3Gi"
+
+# Name prefix for staging resources
+namePrefix: staging-
+
+# Use specific image tags for staging
+images:
+  - name: ollama/ollama
+    newTag: latest
+  - name: ubuntu
+    newTag: "22.04"
