@@ -100,11 +100,12 @@ This SSH's to your GPU host and lists all GGUF models.
 ### Components
 
 **1. Inference Server** (`docker/inference-server/`)
-- Base: `nvidia/cuda:12.1.0-devel-ubuntu22.04`
-- Engine: llama-cpp-python with CUBLAS
+- Base: `nvidia/cuda:12.6.2-devel-ubuntu22.04`
+- Engine: llama-cpp-python 0.3.2 with CUDA support
 - API: OpenAI-compatible `/v1/chat/completions`
 - Models: Mounts `D:\Models` (read-only)
 - GPU: All layers on GPU (`N_GPU_LAYERS=-1`)
+- Build: CMAKE with explicit CUDA linker flags (see CUDA Build Issues below)
 
 **2. Matrix Listener** (`docker/matrix-listener/`)
 - Base: `ubuntu:22.04`
@@ -218,14 +219,15 @@ Run different models simultaneously:
 
 ## Model Selection
 
-### Recommended Models (Tested)
+### Recommended Models (Tested & Verified)
 
-| Model | Size | VRAM | Speed | Quality | Use Case |
-|-------|------|------|-------|---------|----------|
-| gemma-3-12b-it-Q4_K_M | 7.3GB | ~8GB | ⚡⚡⚡ | Good | General chat |
-| Mistral-Small-3.2-24B-Q4_K_M | 14GB | ~15GB | ⚡⚡ | Excellent | Production |
-| DeepSeek-R1-0528-Qwen3-8B-Q4_K_M | 5GB | ~6GB | ⚡⚡⚡⚡ | Great | Reasoning |
-| LFM2-1.2B-Q8_0 | 1.2GB | ~2GB | ⚡⚡⚡⚡⚡ | Fast | Testing |
+| Model | Size | VRAM | Speed | Quality | Use Case | Compatibility |
+|-------|------|------|-------|---------|----------|---------------|
+| Mistral-Small-3.2-24B-Q4_K_M | 13.3GB | ~15GB | ⚡⚡ | Excellent | Production | ✅ Verified |
+| DeepSeek-R1-0528-Qwen3-8B-Q4_K_M | 5GB | ~6GB | ⚡⚡⚡⚡ | Great | Reasoning | ✅ Compatible |
+| LFM2-1.2B-Q8_0 | 1.2GB | ~2GB | ⚡⚡⚡⚡⚡ | Fast | Testing | ✅ Compatible |
+
+**Note on Gemma-3:** The Gemma-3 architecture is not supported by llama-cpp-python 0.3.2. Use Mistral, Qwen, or other llama-architecture models instead.
 
 ### Performance Factors
 
@@ -337,6 +339,74 @@ Slower, less VRAM:
 ```bash
 N_BATCH=256 docker-compose up
 ```
+
+---
+
+## CUDA Build Issues & Solutions
+
+### Issue: CUDA Linker Errors During Build
+
+**Symptoms:**
+```
+/usr/bin/ld: libggml-cuda.so: undefined reference to `cuMemAddressReserve'
+/usr/bin/ld: libggml-cuda.so: undefined reference to `cuGetErrorString'
+```
+
+**Root Cause:**
+- CUDA compilation succeeds (all 114 tasks complete)
+- Final linking stage fails to find CUDA driver library (libcuda.so)
+- Standard LDFLAGS environment variable not passed through pip → CMAKE
+
+**Solution (Already Implemented in Dockerfile):**
+
+The `docker/inference-server/Dockerfile` includes explicit CMAKE linker flags:
+
+```dockerfile
+RUN CMAKE_ARGS="-DGGML_CUDA=on \
+  -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
+  -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda \
+  -DCMAKE_EXE_LINKER_FLAGS='-L/usr/local/cuda/lib64/stubs -lcuda' \
+  -DCMAKE_SHARED_LINKER_FLAGS='-L/usr/local/cuda/lib64/stubs -lcuda'" \
+    CUDA_HOME=/usr/local/cuda \
+    pip install llama-cpp-python[server]==0.3.2 --force-reinstall --no-cache-dir --verbose
+```
+
+**Key Insights:**
+1. During Docker build, CUDA driver stub library is in `/usr/local/cuda/lib64/stubs/`
+2. At runtime, NVIDIA Container Runtime injects the real CUDA driver
+3. Both `CMAKE_EXE_LINKER_FLAGS` and `CMAKE_SHARED_LINKER_FLAGS` are required
+4. Explicit `-lcuda` link instruction needed
+
+**If you modify the Dockerfile:**
+- Always include the linker flags in CMAKE_ARGS
+- Don't rely on LDFLAGS environment variable alone
+- Expect 15-30 minute build time for CUDA compilation
+
+### Issue: Model Architecture Not Supported
+
+**Symptoms:**
+```
+error loading model architecture: unknown model architecture: 'gemma3'
+ValueError: Failed to load model from file
+```
+
+**Cause:**
+llama-cpp-python 0.3.2 doesn't support newer architectures like Gemma-3.
+
+**Solution:**
+1. Use llama-compatible models (Mistral, Qwen, LLama, etc.)
+2. Check model architecture before deployment
+3. Good news: CUDA initialization will still succeed and show GPU detection
+
+**Architecture Verification:**
+Even if model loading fails, check logs for:
+```
+ggml_cuda_init: found 2 CUDA devices:
+  Device 0: Quadro P4000, compute capability 6.1, VMM: yes
+  Device 1: Quadro M4000, compute capability 5.2, VMM: yes
+```
+
+This confirms CUDA is working - just need a compatible model!
 
 ---
 

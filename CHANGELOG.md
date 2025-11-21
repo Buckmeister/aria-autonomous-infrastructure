@@ -6,6 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.3.1] - 2025-11-21
+
+### Fixed - CUDA Linker Bug Resolution
+
+**Critical CUDA Build Fix**
+- Resolved persistent CUDA linker errors during llama-cpp-python compilation
+- Added explicit CMAKE linker flags in `docker/inference-server/Dockerfile`
+- Fix enables successful build of GPU-accelerated inference server
+- Root cause: Linker couldn't find CUDA driver library (libcuda.so) during Docker build
+- Solution: Point CMAKE to `/usr/local/cuda/lib64/stubs` for build-time linking
+- Build now completes successfully: All 114 CUDA compilation tasks + linking ✅
+
+**Technical Details:**
+```dockerfile
+CMAKE_ARGS="-DCMAKE_EXE_LINKER_FLAGS='-L/usr/local/cuda/lib64/stubs -lcuda' \
+  -DCMAKE_SHARED_LINKER_FLAGS='-L/usr/local/cuda/lib64/stubs -lcuda'"
+```
+
+**Verified Working:**
+- Mistral-Small-3.2-24B (23.57B parameters, 13.34 GiB)
+- Dual GPU support (Quadro P4000 + M4000)
+- Pipeline parallelism enabled
+- Production-ready GPU inference
+
+### Changed
+
+**Documentation Updates**
+- Updated `docs/GPU_ROCKET.md` with comprehensive CUDA build troubleshooting section
+- Added "CUDA Build Issues & Solutions" covering linker errors and model compatibility
+- Updated CUDA version from 12.1.0 to 12.6.2 throughout documentation
+- Enhanced model recommendations table with verified compatibility status
+- Added note about Gemma-3 architecture incompatibility with llama-cpp-python 0.3.2
+- Updated inference server component description with build details
+
+**Model Compatibility**
+- Documented that Gemma-3 architecture not supported by llama-cpp-python 0.3.2
+- Verified Mistral-Small-3.2-24B as production-ready (tested and operational)
+- Added architecture compatibility column to model recommendations table
+
+### Added
+
+**Example Configuration**
+- Added `config/rocket-gpu-gemma.json` example configuration
+- Shows complete GPU deployment configuration with all parameters
+- Includes Matrix credentials, model paths, and GPU settings
+
+---
+
 ## [2.3.0] - 2025-11-20
 
 ### Added - V2.3 Enhanced User Experience
