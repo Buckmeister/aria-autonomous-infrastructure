@@ -559,8 +559,14 @@ MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-anthropic.sh
 ENV_EOF"
         elif [[ "$BACKEND_MODE" == "vllm" ]]; then
-            COMPOSE_FILE="docker-compose-vllm.yml"
-            log_info "Using vLLM inference backend (full stack)"
+            # Use CPU-specific compose file for CPU deployments
+            if [[ "$USE_GPU" == "true" ]]; then
+                COMPOSE_FILE="docker-compose-vllm.yml"
+                log_info "Using vLLM inference backend (GPU mode)"
+            else
+                COMPOSE_FILE="docker-compose-vllm-cpu.yml"
+                log_info "Using vLLM inference backend (CPU mode)"
+            fi
 
             ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << 'ENV_EOF'
 MODEL_NAME=$MODEL_NAME
@@ -635,8 +641,14 @@ MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-anthropic.sh
 ENV_EOF
         elif [[ "$BACKEND_MODE" == "vllm" ]]; then
-            COMPOSE_FILE="docker-compose-vllm.yml"
-            log_info "Using vLLM inference backend (full stack)"
+            # Use CPU-specific compose file for CPU deployments
+            if [[ "$USE_GPU" == "true" ]]; then
+                COMPOSE_FILE="docker-compose-vllm.yml"
+                log_info "Using vLLM inference backend (GPU mode)"
+            else
+                COMPOSE_FILE="docker-compose-vllm-cpu.yml"
+                log_info "Using vLLM inference backend (CPU mode)"
+            fi
 
             cat > "$DEPLOY_DIR/.env" << ENV_EOF
 MODEL_NAME=$MODEL_NAME

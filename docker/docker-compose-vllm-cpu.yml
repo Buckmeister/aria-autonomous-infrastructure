@@ -1,0 +1,93 @@
+# Rocket vLLM CPU - Docker Compose Configuration
+# CPU-only inference using vLLM with OpenAI-compatible API
+# Perfect for development and CPU-only hosts
+
+version: '3.8'
+
+services:
+  # vLLM Inference Server - CPU mode
+  inference-server:
+    image: vllm/vllm-openai:latest
+    container_name: rocket-vllm-inference
+    command:
+      - --model
+      - ${MODEL_NAME:-Qwen/Qwen2.5-0.5B-Instruct}
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8080"
+      # Memory optimization
+      - --max-model-len
+      - "${MAX_MODEL_LEN:-4096}"
+      # Enable metrics
+      - --disable-log-requests
+    ports:
+      - "${INFERENCE_PORT:-8080}:8080"
+    networks:
+      - rocket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # vLLM needs time to download and load model
+    shm_size: '2gb'  # Shared memory for better performance
+
+  # Matrix Listener - Connects Matrix to vLLM inference server
+  matrix-listener:
+    build:
+      context: ./matrix-listener
+      dockerfile: Dockerfile
+    container_name: rocket-listener
+    depends_on:
+      inference-server:
+        condition: service_healthy
+    environment:
+      - CONFIG_FILE=/root/aria-autonomous-infrastructure/config/matrix-credentials.json
+      - INFERENCE_URL=http://inference-server:8080/v1/chat/completions
+      - LOG_FILE=/var/log/conversational-listener.log
+    volumes:
+      # Mount Matrix credentials
+      - ${MATRIX_CONFIG_DIR:-./config}:/root/aria-autonomous-infrastructure/config:ro
+      # Mount listener script
+      - ${LISTENER_SCRIPT:-./matrix-listener/matrix-conversational-listener-openai.sh}:/root/aria-autonomous-infrastructure/bin/matrix-conversational-listener.sh:ro
+    networks:
+      - rocket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "matrix-conversational-listener"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  rocket-network:
+    driver: bridge
+
+# ============================================================================
+# Usage
+# ============================================================================
+#
+# CPU Deployment:
+#   Create .env file:
+#     MODEL_NAME=Qwen/Qwen2.5-0.5B-Instruct  # Use smaller model for CPU
+#     INFERENCE_PORT=8080
+#     MATRIX_CONFIG_DIR=./config
+#
+#   Start:
+#     docker compose -f docker-compose-vllm-cpu.yml up -d
+#
+# ============================================================================
+# vLLM CPU Mode
+# ============================================================================
+#
+# vLLM can run on CPU, but with reduced performance compared to GPU:
+# ✅ Same OpenAI-compatible API
+# ✅ Full model support
+# ✅ PagedAttention memory optimization
+# ⚠️  Slower inference (seconds per token vs. milliseconds)
+# ⚠️  Recommend smaller models (0.5B-3B parameters)
+# ⚠️  Best for development/testing, not production at scale
+#
