@@ -498,8 +498,8 @@ if [[ "$USE_COMPOSE" == "true" ]]; then
     log_info "📦 Deploying via Docker Compose..."
 
     # Validate GPU mode requirements
-    # Skip confirmation for vLLM (supports both GPU and CPU natively)
-    if [[ "$USE_GPU" == "false" ]] && [[ "$BACKEND_MODE" != "vllm" ]]; then
+    # Skip confirmation for vLLM and Ollama (both support GPU and CPU natively)
+    if [[ "$USE_GPU" == "false" ]] && [[ "$BACKEND_MODE" != "vllm" ]] && [[ "$BACKEND_MODE" != "ollama" ]]; then
         log_warn "Docker Compose is typically used for GPU deployments"
         read -p "Continue with Docker Compose for CPU deployment? (y/n) " -n 1 -r
         echo
