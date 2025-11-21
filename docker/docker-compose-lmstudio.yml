@@ -1,0 +1,23 @@
+# Rocket Matrix Listener - Uses external LM Studio
+services:
+  matrix-listener:
+    build:
+      context: ./matrix-listener
+      dockerfile: Dockerfile
+    container_name: rocket-listener-lmstudio
+    environment:
+      - CONFIG_FILE=/root/aria-autonomous-infrastructure/config/matrix-credentials.json
+      - INFERENCE_URL=http://host.docker.internal:1234/v1/chat/completions
+      - LOG_FILE=/var/log/conversational-listener.log
+    volumes:
+      - ./config:/root/aria-autonomous-infrastructure/config:ro
+      - ./matrix-listener/matrix-conversational-listener-openai.sh:/root/aria-autonomous-infrastructure/bin/matrix-conversational-listener.sh:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "matrix-conversational-listener"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

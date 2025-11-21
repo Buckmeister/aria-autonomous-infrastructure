@@ -1,0 +1,91 @@
+# Rocket GPU Inference Server - Pure llama.cpp with CUDA
+# This builds llama.cpp from source for maximum compatibility
+# Supports ALL model architectures including gemma3, qwen3, etc.
+
+FROM nvidia/cuda:12.6.2-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CUDA_DOCKER_ARCH=all
+ENV CUDA_HOME=/usr/local/cuda
+ENV PATH=${CUDA_HOME}/bin:${PATH}
+ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+
+# Build arguments
+ARG LLAMA_CPP_VERSION=master
+ARG LLAMA_CPP_REPO=https://github.com/ggerganov/llama.cpp.git
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    cmake \
+    curl \
+    libcurl4-openssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone and build llama.cpp
+WORKDIR /opt
+RUN echo "Building llama.cpp from ${LLAMA_CPP_REPO} (${LLAMA_CPP_VERSION})" && \
+    git clone ${LLAMA_CPP_REPO} llama.cpp && \
+    cd llama.cpp && \
+    git checkout ${LLAMA_CPP_VERSION} && \
+    mkdir build && cd build && \
+    cmake .. \
+        -DGGML_CUDA=ON \
+        -DLLAMA_CURL=ON \
+        -DCMAKE_CUDA_COMPILER=${CUDA_HOME}/bin/nvcc \
+        -DCMAKE_CUDA_ARCHITECTURES="50;61;70;75;80;86;89" \
+        -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build . --config Release -j$(nproc) && \
+    echo "Build complete!"
+
+# Create directories
+WORKDIR /app
+RUN mkdir -p /models
+
+# Expose port
+EXPOSE 8080
+
+# Health check using curl
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Default environment variables
+ENV MODEL_PATH=/models/model.gguf
+ENV N_GPU_LAYERS=-1
+ENV N_CTX=4096
+ENV N_PARALLEL=1
+ENV HOST=0.0.0.0
+ENV PORT=8080
+
+# Run llama-server
+# Note: We use a shell to expand environment variables
+CMD /opt/llama.cpp/build/bin/llama-server \
+    --host ${HOST} \
+    --port ${PORT} \
+    --model ${MODEL_PATH} \
+    --ctx-size ${N_CTX} \
+    --n-gpu-layers ${N_GPU_LAYERS} \
+    --parallel ${N_PARALLEL} \
+    --metrics \
+    --log-format text \
+    --verbose
+
+# Usage:
+#   docker build -t rocket-inference-llamacpp -f Dockerfile.llamacpp .
+#
+#   # Run with environment variables:
+#   docker run --gpus all \
+#     -e MODEL_PATH=/models/gemma-3-12b.gguf \
+#     -e N_GPU_LAYERS=-1 \
+#     -e N_CTX=4096 \
+#     -v /path/to/models:/models:ro \
+#     -p 8080:8080 \
+#     rocket-inference-llamacpp
+#
+# Build-time options:
+#   docker build \
+#     --build-arg LLAMA_CPP_VERSION=b7126 \
+#     -f Dockerfile.llamacpp \
+#     -t rocket-inference-llamacpp:b7126 \
+#     .

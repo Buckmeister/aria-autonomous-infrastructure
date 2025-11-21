@@ -31,5 +31,5 @@ WORKDIR /root/aria-autonomous-infrastructure
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD pgrep -f matrix-conversational-listener || exit 1
 
-# Run listener
-CMD ["bash", "-c", "CONFIG_FILE=/root/aria-autonomous-infrastructure/config/matrix-credentials.json ./bin/matrix-conversational-listener.sh"]
+# Run OpenAI-compatible listener for llama.cpp
+CMD ["bash", "-c", "CONFIG_FILE=/root/aria-autonomous-infrastructure/config/matrix-credentials.json ./docker/matrix-listener/matrix-conversational-listener-openai.sh"]

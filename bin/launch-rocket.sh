@@ -39,6 +39,10 @@ USE_GPU=false
 USE_COMPOSE=false
 DOCKER_HOST_PARAM=""
 
+# Backend mode (docker=pure Docker with inference, lmstudio=hybrid with external LM Studio, auto=detect)
+BACKEND_MODE="auto"
+LMSTUDIO_PORT="1234"
+
 # Container/Deployment settings
 CONTAINER_NAME="rocket-instance"
 DEPLOY_DIR="/tmp/rocket-deploy"
@@ -94,6 +98,11 @@ Universal Rocket deployment supporting CPU/GPU, local/remote, and multiple deplo
   --use-gpu             Enable GPU acceleration (automatically enables Docker Compose)
   --use-compose         Use Docker Compose (not needed with --use-gpu)
   --docker-host HOST    Docker host (local, tcp://host:port, or ssh://user@host)
+  --backend MODE        Backend mode: docker|lmstudio|auto (default: auto)
+                        docker:   Self-contained Docker with inference server
+                        lmstudio: Use external LM Studio API (hybrid mode)
+                        auto:     Auto-detect (checks for LM Studio on port 1234)
+  --lmstudio-port PORT  LM Studio API port (default: 1234)
 
 === Model Configuration ===
   # For CPU (HuggingFace models):
@@ -145,6 +154,7 @@ Universal Rocket deployment supporting CPU/GPU, local/remote, and multiple deplo
   # Example rocket-gpu.json:
   {
     "use_gpu": true,
+    "backend": "auto",
     "model_path": "/models/.../gemma-3-12b-it-Q4_K_M.gguf",
     "models_dir": "/d/Models",
     "docker_host": "ssh://Aria@wks-bckx01",
@@ -155,6 +165,21 @@ Universal Rocket deployment supporting CPU/GPU, local/remote, and multiple deplo
       "room": "!xyz:srv1.local"
     },
     "instance_name": "Rocket-Gemma-12B"
+  }
+
+  # Example rocket-lmstudio.json (hybrid with LM Studio):
+  {
+    "use_gpu": true,
+    "backend": "lmstudio",
+    "lmstudio_port": 1234,
+    "docker_host": "ssh://Aria@wks-bckx01",
+    "matrix": {
+      "server": "http://srv1:8008",
+      "user": "@rocket:srv1.local",
+      "token": "syt_abc123",
+      "room": "!xyz:srv1.local"
+    },
+    "instance_name": "Rocket-LMStudio"
   }
 
   # 5. Remote CPU deployment via SSH
@@ -199,6 +224,12 @@ load_config_from_json() {
 
     value=$(jq -r '.docker_host // empty' "$config_file")
     [[ -n "$value" ]] && DOCKER_HOST_PARAM="$value"
+
+    value=$(jq -r '.backend // empty' "$config_file")
+    [[ -n "$value" ]] && BACKEND_MODE="$value"
+
+    value=$(jq -r '.lmstudio_port // empty' "$config_file")
+    [[ -n "$value" ]] && LMSTUDIO_PORT="$value"
 
     # Model configuration
     value=$(jq -r '.model // empty' "$config_file")
@@ -254,6 +285,8 @@ while [[ $# -gt 0 ]]; do
         --use-gpu) USE_GPU=true; shift ;;
         --use-compose) USE_COMPOSE=true; shift ;;
         --docker-host) DOCKER_HOST_PARAM="$2"; shift 2 ;;
+        --backend) BACKEND_MODE="$2"; shift 2 ;;
+        --lmstudio-port) LMSTUDIO_PORT="$2"; shift 2 ;;
 
         # Model configuration
         --model) MODEL_NAME="$2"; shift 2 ;;
@@ -280,6 +313,35 @@ while [[ $# -gt 0 ]]; do
         *) log_error "Unknown option: $1"; show_usage; exit 1 ;;
     esac
 done
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+# Detect backend mode by checking if LM Studio is running
+detect_backend() {
+    local host=$1
+    local port=${2:-1234}
+
+    log_info "Detecting backend mode..."
+
+    if [[ -n "$host" ]]; then
+        # Remote host - check via SSH
+        if ssh "$host" "curl -s --max-time 2 http://localhost:$port/v1/models" >/dev/null 2>&1; then
+            echo "lmstudio"
+            return 0
+        fi
+    else
+        # Local host - check directly
+        if curl -s --max-time 2 http://localhost:$port/v1/models >/dev/null 2>&1; then
+            echo "lmstudio"
+            return 0
+        fi
+    fi
+
+    echo "docker"
+    return 0
+}
 
 # ============================================================================
 # Validation & Setup
@@ -312,10 +374,31 @@ else
     log_info "Local deployment (default)"
 fi
 
+# Validate and resolve backend mode
+if [[ "$BACKEND_MODE" == "auto" ]]; then
+    # Auto-detect backend
+    if [[ "$IS_REMOTE" == "true" ]] && [[ -n "$DOCKER_HOST_SSH" ]]; then
+        BACKEND_MODE=$(detect_backend "$DOCKER_HOST_SSH" "$LMSTUDIO_PORT")
+    else
+        BACKEND_MODE=$(detect_backend "" "$LMSTUDIO_PORT")
+    fi
+    log_info "Auto-detected backend: $BACKEND_MODE"
+elif [[ "$BACKEND_MODE" != "docker" ]] && [[ "$BACKEND_MODE" != "lmstudio" ]]; then
+    exit_with_error "Invalid backend mode: $BACKEND_MODE. Use: docker, lmstudio, or auto"
+else
+    log_info "Using specified backend: $BACKEND_MODE"
+fi
+
 # Auto-enable compose for GPU deployments (GPU always uses compose)
 if [[ "$USE_GPU" == "true" ]]; then
     USE_COMPOSE=true
     log_info "GPU mode: Docker Compose automatically enabled"
+fi
+
+# LM Studio mode requires Compose (listener only)
+if [[ "$BACKEND_MODE" == "lmstudio" ]]; then
+    USE_COMPOSE=true
+    log_info "LM Studio backend: Docker Compose automatically enabled (listener only)"
 fi
 
 # Validate model configuration
@@ -332,6 +415,7 @@ fi
 log_info "🚀 Unified Rocket Deployment Configuration"
 display_config_summary \
     "Deployment Mode:   $([ "$USE_GPU" == "true" ] && echo "GPU" || echo "CPU")" \
+    "Backend:           $BACKEND_MODE $([ "$BACKEND_MODE" == "lmstudio" ] && echo "(port $LMSTUDIO_PORT)" || echo "")" \
     "Deploy Method:     $([ "$USE_COMPOSE" == "true" ] && echo "Docker Compose" || echo "Direct Docker")" \
     "Docker Host:       $([ "$IS_REMOTE" == "true" ] && echo "$DOCKER_HOST_PARAM" || echo "local")" \
     "Container/Deploy:  $CONTAINER_NAME" \
@@ -405,7 +489,22 @@ if [[ "$USE_COMPOSE" == "true" ]]; then
         UNIX_MODELS_DIR="${UNIX_MODELS_DIR//D:/d}"
         UNIX_MODELS_DIR="${UNIX_MODELS_DIR//C:/c}"
 
-        ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << 'ENV_EOF'
+        # Select compose file based on backend
+        COMPOSE_FILE="docker-compose.yml"
+        if [[ "$BACKEND_MODE" == "lmstudio" ]]; then
+            COMPOSE_FILE="docker-compose-lmstudio.yml"
+            log_info "Using LM Studio backend (listener only)"
+
+            ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << 'ENV_EOF'
+LMSTUDIO_PORT=$LMSTUDIO_PORT
+INFERENCE_PORT=$INFERENCE_PORT
+MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
+LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
+ENV_EOF"
+        else
+            log_info "Using Docker backend (full stack with inference server)"
+
+            ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << 'ENV_EOF'
 MODEL_PATH=$MODEL_PATH
 N_GPU_LAYERS=$N_GPU_LAYERS
 N_CTX=4096
@@ -416,14 +515,16 @@ MODELS_DIR=$UNIX_MODELS_DIR
 MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
 ENV_EOF"
+        fi
 
         log_success "Environment configured"
 
         # Deploy via docker-compose on remote host
         log_info "🐳 Deploying via Docker Compose on remote host..."
+        log_info "   Using compose file: $COMPOSE_FILE"
         log_info "   This may take a few minutes for first build..."
 
-        ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cd $DEPLOY_DIR && docker-compose down 2>/dev/null || true && docker-compose up --build -d && echo 'Waiting for services to start...' && sleep 10 && docker-compose ps"
+        ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE down 2>/dev/null || true && docker-compose -f $COMPOSE_FILE up --build -d && echo 'Waiting for services to start...' && sleep 10 && docker-compose -f $COMPOSE_FILE ps"
 
     else
         # Local Docker Compose deployment
@@ -440,7 +541,23 @@ ENV_EOF"
 
         # Create .env file
         log_info "⚙️  Creating environment configuration..."
-        cat > "$DEPLOY_DIR/.env" << ENV_EOF
+
+        # Select compose file based on backend
+        COMPOSE_FILE="docker-compose.yml"
+        if [[ "$BACKEND_MODE" == "lmstudio" ]]; then
+            COMPOSE_FILE="docker-compose-lmstudio.yml"
+            log_info "Using LM Studio backend (listener only)"
+
+            cat > "$DEPLOY_DIR/.env" << ENV_EOF
+LMSTUDIO_PORT=$LMSTUDIO_PORT
+INFERENCE_PORT=$INFERENCE_PORT
+MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
+LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
+ENV_EOF
+        else
+            log_info "Using Docker backend (full stack with inference server)"
+
+            cat > "$DEPLOY_DIR/.env" << ENV_EOF
 MODEL_PATH=$MODEL_PATH
 N_GPU_LAYERS=$N_GPU_LAYERS
 N_CTX=4096
@@ -451,18 +568,20 @@ MODELS_DIR=$MODELS_DIR
 MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
 ENV_EOF
+        fi
 
         log_success "Environment configured"
 
         # Deploy via docker-compose locally
         log_info "🐳 Deploying via Docker Compose..."
+        log_info "   Using compose file: $COMPOSE_FILE"
         log_info "   This may take a few minutes for first build..."
 
-        cd "$DEPLOY_DIR" && docker-compose down 2>/dev/null || true
-        docker-compose up --build -d
+        cd "$DEPLOY_DIR" && docker-compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+        docker-compose -f "$COMPOSE_FILE" up --build -d
         echo "Waiting for services to start..."
         sleep 10
-        docker-compose ps
+        docker-compose -f "$COMPOSE_FILE" ps
     fi
 
     # Cleanup temp credentials file
@@ -689,30 +808,40 @@ if [[ "$USE_COMPOSE" == "true" ]]; then
     # Docker Compose deployment status
     echo "Deployment Details:"
     echo "  Method:             Docker Compose"
+    echo "  Backend:            $BACKEND_MODE"
     echo "  Deployment Type:    $([ "$USE_GPU" == "true" ] && echo "GPU" || echo "CPU")"
     echo "  Docker Host:        $([ "$IS_REMOTE" == "true" ] && echo "$DOCKER_HOST_PARAM" || echo "local")"
     echo "  Deploy Directory:   $DEPLOY_DIR"
     echo
     echo "Services:"
-    if [[ "$IS_REMOTE" == "true" ]] && [[ "$DOCKER_HOST_PARAM" =~ ^ssh:// ]]; then
-        REMOTE_HOST="${DOCKER_HOST_SSH%%@*}"
-        echo "  Inference Server:   http://$REMOTE_HOST:$INFERENCE_PORT"
+    if [[ "$BACKEND_MODE" == "lmstudio" ]]; then
+        if [[ "$IS_REMOTE" == "true" ]] && [[ "$DOCKER_HOST_PARAM" =~ ^ssh:// ]]; then
+            REMOTE_HOST="${DOCKER_HOST_SSH%%@*}"
+            echo "  LM Studio API:      http://$REMOTE_HOST:$LMSTUDIO_PORT (external)"
+        else
+            echo "  LM Studio API:      http://localhost:$LMSTUDIO_PORT (external)"
+        fi
     else
-        echo "  Inference Server:   http://localhost:$INFERENCE_PORT"
+        if [[ "$IS_REMOTE" == "true" ]] && [[ "$DOCKER_HOST_PARAM" =~ ^ssh:// ]]; then
+            REMOTE_HOST="${DOCKER_HOST_SSH%%@*}"
+            echo "  Inference Server:   http://$REMOTE_HOST:$INFERENCE_PORT"
+        else
+            echo "  Inference Server:   http://localhost:$INFERENCE_PORT"
+        fi
     fi
     echo "  Matrix Listener:    Connected to $MATRIX_ROOM"
     echo
     echo "Useful Commands:"
     if [[ "$IS_REMOTE" == "true" ]] && [[ "$DOCKER_HOST_PARAM" =~ ^ssh:// ]]; then
-        echo "  View logs:       ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose logs -f'"
-        echo "  Check status:    ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose ps'"
-        echo "  Stop services:   ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose down'"
-        echo "  Restart:         ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose restart'"
+        echo "  View logs:       ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE logs -f'"
+        echo "  Check status:    ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE ps'"
+        echo "  Stop services:   ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE down'"
+        echo "  Restart:         ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE restart'"
     else
-        echo "  View logs:       cd $DEPLOY_DIR && docker-compose logs -f"
-        echo "  Check status:    cd $DEPLOY_DIR && docker-compose ps"
-        echo "  Stop services:   cd $DEPLOY_DIR && docker-compose down"
-        echo "  Restart:         cd $DEPLOY_DIR && docker-compose restart"
+        echo "  View logs:       cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE logs -f"
+        echo "  Check status:    cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE ps"
+        echo "  Stop services:   cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE down"
+        echo "  Restart:         cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE restart"
     fi
 else
     # Direct Docker deployment status
