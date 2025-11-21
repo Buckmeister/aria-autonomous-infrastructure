@@ -39,11 +39,16 @@ USE_GPU=false
 USE_COMPOSE=false
 DOCKER_HOST_PARAM=""
 
-# Backend mode (docker=pure Docker with inference, lmstudio=hybrid with external LM Studio, anthropic=Cloud API, auto=detect)
+# Backend mode (docker=pure Docker with inference, lmstudio=hybrid with external LM Studio, anthropic=Cloud API, vllm=vLLM inference, auto=detect)
 BACKEND_MODE="auto"
 LMSTUDIO_PORT="1234"
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
 ANTHROPIC_MODEL="claude-sonnet-4-5-20250929"
+
+# vLLM configuration
+TENSOR_PARALLEL_SIZE="1"
+GPU_MEMORY_UTIL="0.9"
+MAX_MODEL_LEN="4096"
 
 # Container/Deployment settings
 CONTAINER_NAME="rocket-instance"
@@ -294,6 +299,9 @@ while [[ $# -gt 0 ]]; do
         --lmstudio-port) LMSTUDIO_PORT="$2"; shift 2 ;;
         --anthropic-key) ANTHROPIC_API_KEY="$2"; shift 2 ;;
         --anthropic-model) ANTHROPIC_MODEL="$2"; shift 2 ;;
+        --tensor-parallel-size) TENSOR_PARALLEL_SIZE="$2"; shift 2 ;;
+        --gpu-memory-util) GPU_MEMORY_UTIL="$2"; shift 2 ;;
+        --max-model-len) MAX_MODEL_LEN="$2"; shift 2 ;;
 
         # Model configuration
         --model) MODEL_NAME="$2"; shift 2 ;;
@@ -390,8 +398,8 @@ if [[ "$BACKEND_MODE" == "auto" ]]; then
         BACKEND_MODE=$(detect_backend "" "$LMSTUDIO_PORT")
     fi
     log_info "Auto-detected backend: $BACKEND_MODE"
-elif [[ "$BACKEND_MODE" != "docker" ]] && [[ "$BACKEND_MODE" != "lmstudio" ]] && [[ "$BACKEND_MODE" != "anthropic" ]]; then
-    exit_with_error "Invalid backend mode: $BACKEND_MODE. Use: docker, lmstudio, anthropic, or auto"
+elif [[ "$BACKEND_MODE" != "docker" ]] && [[ "$BACKEND_MODE" != "lmstudio" ]] && [[ "$BACKEND_MODE" != "anthropic" ]] && [[ "$BACKEND_MODE" != "vllm" ]]; then
+    exit_with_error "Invalid backend mode: $BACKEND_MODE. Use: docker, lmstudio, anthropic, vllm, or auto"
 else
     log_info "Using specified backend: $BACKEND_MODE"
 fi
@@ -410,13 +418,15 @@ if [[ "$USE_GPU" == "true" ]]; then
     log_info "GPU mode: Docker Compose automatically enabled"
 fi
 
-# LM Studio and Anthropic modes require Compose (listener only)
-if [[ "$BACKEND_MODE" == "lmstudio" ]] || [[ "$BACKEND_MODE" == "anthropic" ]]; then
+# LM Studio, Anthropic, and vLLM modes require Compose
+if [[ "$BACKEND_MODE" == "lmstudio" ]] || [[ "$BACKEND_MODE" == "anthropic" ]] || [[ "$BACKEND_MODE" == "vllm" ]]; then
     USE_COMPOSE=true
     if [[ "$BACKEND_MODE" == "lmstudio" ]]; then
         log_info "LM Studio backend: Docker Compose automatically enabled (listener only)"
-    else
+    elif [[ "$BACKEND_MODE" == "anthropic" ]]; then
         log_info "Anthropic backend: Docker Compose automatically enabled (listener only)"
+    elif [[ "$BACKEND_MODE" == "vllm" ]]; then
+        log_info "vLLM backend: Docker Compose automatically enabled (full stack)"
     fi
 fi
 
@@ -530,6 +540,19 @@ ANTHROPIC_MODEL=$ANTHROPIC_MODEL
 MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-anthropic.sh
 ENV_EOF"
+        elif [[ "$BACKEND_MODE" == "vllm" ]]; then
+            COMPOSE_FILE="docker-compose-vllm.yml"
+            log_info "Using vLLM inference backend (full stack)"
+
+            ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << 'ENV_EOF'
+MODEL_NAME=$MODEL_NAME
+INFERENCE_PORT=$INFERENCE_PORT
+TENSOR_PARALLEL_SIZE=$TENSOR_PARALLEL_SIZE
+GPU_MEMORY_UTIL=$GPU_MEMORY_UTIL
+MAX_MODEL_LEN=$MAX_MODEL_LEN
+MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
+LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
+ENV_EOF"
         else
             log_info "Using Docker backend (full stack with inference server)"
 
@@ -592,6 +615,19 @@ ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
 ANTHROPIC_MODEL=$ANTHROPIC_MODEL
 MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-anthropic.sh
+ENV_EOF
+        elif [[ "$BACKEND_MODE" == "vllm" ]]; then
+            COMPOSE_FILE="docker-compose-vllm.yml"
+            log_info "Using vLLM inference backend (full stack)"
+
+            cat > "$DEPLOY_DIR/.env" << ENV_EOF
+MODEL_NAME=$MODEL_NAME
+INFERENCE_PORT=$INFERENCE_PORT
+TENSOR_PARALLEL_SIZE=$TENSOR_PARALLEL_SIZE
+GPU_MEMORY_UTIL=$GPU_MEMORY_UTIL
+MAX_MODEL_LEN=$MAX_MODEL_LEN
+MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
+LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
 ENV_EOF
         else
             log_info "Using Docker backend (full stack with inference server)"

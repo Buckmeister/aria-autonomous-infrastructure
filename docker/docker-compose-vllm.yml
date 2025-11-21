@@ -1,0 +1,158 @@
+# Rocket vLLM - Docker Compose Configuration
+# High-performance inference using vLLM with OpenAI-compatible API
+# Perfect for Ray Serve integration (Phase 3 ready!)
+
+version: '3.8'
+
+services:
+  # vLLM Inference Server - Production-grade LLM serving
+  inference-server:
+    image: vllm/vllm-openai:latest
+    container_name: rocket-vllm-inference
+    runtime: nvidia  # Remove this line for CPU-only deployment
+    environment:
+      # NVIDIA GPU configuration (comment out for CPU)
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    command:
+      - --model
+      - ${MODEL_NAME:-Qwen/Qwen2.5-3B-Instruct}
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8080"
+      # GPU configuration (remove --tensor-parallel-size for CPU)
+      - --tensor-parallel-size
+      - "${TENSOR_PARALLEL_SIZE:-1}"
+      # Memory optimization
+      - --max-model-len
+      - "${MAX_MODEL_LEN:-4096}"
+      # Performance tuning
+      - --gpu-memory-utilization
+      - "${GPU_MEMORY_UTIL:-0.9}"
+      # Enable metrics
+      - --disable-log-requests
+    ports:
+      - "${INFERENCE_PORT:-8080}:8080"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${GPU_COUNT:-1}
+              capabilities: [gpu]
+    networks:
+      - rocket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # vLLM needs time to download and load model
+    shm_size: '2gb'  # Shared memory for better performance
+
+  # Matrix Listener - Connects Matrix to vLLM inference server
+  matrix-listener:
+    build:
+      context: ./matrix-listener
+      dockerfile: Dockerfile
+    container_name: rocket-listener
+    depends_on:
+      inference-server:
+        condition: service_healthy
+    environment:
+      - CONFIG_FILE=/root/aria-autonomous-infrastructure/config/matrix-credentials.json
+      - INFERENCE_URL=http://inference-server:8080/v1/chat/completions
+      - LOG_FILE=/var/log/conversational-listener.log
+    volumes:
+      # Mount Matrix credentials
+      - ${MATRIX_CONFIG_DIR:-./config}:/root/aria-autonomous-infrastructure/config:ro
+      # Mount listener script
+      - ${LISTENER_SCRIPT:-./matrix-listener/matrix-conversational-listener-openai.sh}:/root/aria-autonomous-infrastructure/bin/matrix-conversational-listener.sh:ro
+    networks:
+      - rocket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "matrix-conversational-listener"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  rocket-network:
+    driver: bridge
+
+# ============================================================================
+# Usage Examples
+# ============================================================================
+#
+# 1. GPU Deployment (Default):
+#    Create .env file:
+#      MODEL_NAME=Qwen/Qwen2.5-3B-Instruct
+#      INFERENCE_PORT=8080
+#      MATRIX_CONFIG_DIR=./config
+#
+#    Start:
+#      docker-compose -f docker-compose-vllm.yml up -d
+#
+# 2. CPU-Only Deployment:
+#    Edit this file:
+#      - Remove 'runtime: nvidia' line
+#      - Remove NVIDIA environment variables
+#      - Remove 'deploy.resources.reservations' section
+#      - Remove '--tensor-parallel-size' from command
+#
+#    Create .env file:
+#      MODEL_NAME=Qwen/Qwen2.5-0.5B-Instruct  # Use smaller model for CPU
+#      INFERENCE_PORT=8080
+#      MATRIX_CONFIG_DIR=./config
+#
+# 3. Multi-GPU Deployment:
+#    Create .env file:
+#      MODEL_NAME=Qwen/Qwen2.5-14B-Instruct
+#      TENSOR_PARALLEL_SIZE=2  # Use 2 GPUs
+#      GPU_COUNT=2
+#      INFERENCE_PORT=8080
+#      MATRIX_CONFIG_DIR=./config
+#
+# 4. Custom Configuration:
+#    Environment variables available:
+#      MODEL_NAME            - HuggingFace model ID
+#      INFERENCE_PORT        - API port (default: 8080)
+#      TENSOR_PARALLEL_SIZE  - Number of GPUs for tensor parallelism
+#      GPU_COUNT             - Number of GPUs to reserve
+#      MAX_MODEL_LEN         - Maximum sequence length (default: 4096)
+#      GPU_MEMORY_UTIL       - GPU memory utilization (default: 0.9)
+#      MATRIX_CONFIG_DIR     - Path to Matrix credentials
+#      LISTENER_SCRIPT       - Custom listener script path
+#
+# ============================================================================
+# Why vLLM?
+# ============================================================================
+#
+# ✅ Production-Ready: Used by major companies (Databricks, Anyscale)
+# ✅ High Performance: PagedAttention, continuous batching
+# ✅ OpenAI-Compatible: Drop-in replacement for OpenAI API
+# ✅ Ray Integration: Perfect for Phase 3 (Ray Serve)
+# ✅ Flexible Models: Works with any HuggingFace model
+# ✅ GPU + CPU: Supports both deployment modes
+# ✅ Multi-GPU: Tensor parallelism for large models
+# ✅ Easy Scaling: Built for distributed inference
+#
+# ============================================================================
+# Next Steps (Phase 2-3)
+# ============================================================================
+#
+# Phase 2 (Kubernetes):
+#   - Convert to K8s Deployment + Service
+#   - Add Horizontal Pod Autoscaler
+#   - Use PersistentVolume for model caching
+#
+# Phase 3 (Ray Cluster):
+#   - Deploy as Ray Serve application
+#   - Enable GPU-preferred, CPU-fallback scheduling
+#   - Add Ray Dashboard for monitoring
+#   - Implement intelligent request routing
+#
