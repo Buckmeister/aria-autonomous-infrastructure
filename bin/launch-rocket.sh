@@ -594,7 +594,7 @@ ENV_EOF"
         log_info "   Using compose file: $COMPOSE_FILE"
         log_info "   This may take a few minutes for first build..."
 
-        ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE down 2>/dev/null || true && docker-compose -f $COMPOSE_FILE up --build -d && echo 'Waiting for services to start...' && sleep 10 && docker-compose -f $COMPOSE_FILE ps"
+        ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE down 2>/dev/null || true && docker compose -f $COMPOSE_FILE up --build -d && echo 'Waiting for services to start...' && sleep 10 && docker compose -f $COMPOSE_FILE ps"
 
     else
         # Local Docker Compose deployment
@@ -670,11 +670,11 @@ ENV_EOF
         log_info "   Using compose file: $COMPOSE_FILE"
         log_info "   This may take a few minutes for first build..."
 
-        cd "$DEPLOY_DIR" && docker-compose -f "$COMPOSE_FILE" down 2>/dev/null || true
-        docker-compose -f "$COMPOSE_FILE" up --build -d
+        cd "$DEPLOY_DIR" && docker compose -f "$COMPOSE_FILE" down 2>/dev/null || true
+        docker compose -f "$COMPOSE_FILE" up --build -d
         echo "Waiting for services to start..."
         sleep 10
-        docker-compose -f "$COMPOSE_FILE" ps
+        docker compose -f "$COMPOSE_FILE" ps
     fi
 
     # Cleanup temp credentials file
@@ -926,15 +926,15 @@ if [[ "$USE_COMPOSE" == "true" ]]; then
     echo
     echo "Useful Commands:"
     if [[ "$IS_REMOTE" == "true" ]] && [[ "$DOCKER_HOST_PARAM" =~ ^ssh:// ]]; then
-        echo "  View logs:       ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE logs -f'"
-        echo "  Check status:    ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE ps'"
-        echo "  Stop services:   ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE down'"
-        echo "  Restart:         ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE restart'"
+        echo "  View logs:       ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE logs -f'"
+        echo "  Check status:    ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE ps'"
+        echo "  Stop services:   ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE down'"
+        echo "  Restart:         ssh -i $DOCKER_HOST_KEY $DOCKER_HOST_SSH 'cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE restart'"
     else
-        echo "  View logs:       cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE logs -f"
-        echo "  Check status:    cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE ps"
-        echo "  Stop services:   cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE down"
-        echo "  Restart:         cd $DEPLOY_DIR && docker-compose -f $COMPOSE_FILE restart"
+        echo "  View logs:       cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE logs -f"
+        echo "  Check status:    cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE ps"
+        echo "  Stop services:   cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE down"
+        echo "  Restart:         cd $DEPLOY_DIR && docker compose -f $COMPOSE_FILE restart"
     fi
 else
     # Direct Docker deployment status
