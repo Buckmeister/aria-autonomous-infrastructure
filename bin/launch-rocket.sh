@@ -575,7 +575,7 @@ ENV_EOF"
                 log_info "Using vLLM inference backend (CPU mode)"
             fi
 
-            ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << 'ENV_EOF'
+            ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << ENV_EOF
 MODEL_NAME=$MODEL_NAME
 INFERENCE_PORT=$INFERENCE_PORT
 TENSOR_PARALLEL_SIZE=$TENSOR_PARALLEL_SIZE
@@ -588,7 +588,7 @@ ENV_EOF"
             COMPOSE_FILE="docker-compose-ollama.yml"
             log_info "Using Ollama inference backend (CPU-optimized, GPU-optional)"
 
-            ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << 'ENV_EOF'
+            ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << ENV_EOF
 MODEL_NAME=$MODEL_NAME
 OLLAMA_PORT=$OLLAMA_PORT
 MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
