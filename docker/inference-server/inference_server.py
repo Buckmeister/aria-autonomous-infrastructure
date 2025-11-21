@@ -44,6 +44,7 @@ def main():
         "--n_batch", str(N_BATCH),
         "--host", HOST,
         "--port", str(PORT),
+        "--chat_format", "chatml",  # Override model's chat template to avoid strftime_now issues
     ]
 
     print(f"Command: {' '.join(cmd)}")
