@@ -432,12 +432,17 @@ fi
 
 # Validate model configuration
 if [[ "$USE_GPU" == "true" ]]; then
-    if [[ -z "$MODEL_PATH" ]]; then
-        exit_with_error "GPU mode requires --model-path (path to GGUF model file)"
+    # llama.cpp backend requires GGUF models with paths
+    if [[ "$BACKEND_MODE" == "docker" ]]; then
+        if [[ -z "$MODEL_PATH" ]]; then
+            exit_with_error "GPU mode with llama.cpp backend requires --model-path (path to GGUF model file)"
+        fi
+        if [[ -z "$MODELS_DIR" ]]; then
+            exit_with_error "GPU mode with llama.cpp backend requires --models-dir (directory to mount as /models)"
+        fi
     fi
-    if [[ -z "$MODELS_DIR" ]]; then
-        exit_with_error "GPU mode requires --models-dir (directory to mount as /models)"
-    fi
+    # vLLM backend uses HuggingFace models (MODEL_NAME), no GGUF needed
+    # anthropic and lmstudio backends don't need model configuration
 fi
 
 # Display configuration
@@ -474,7 +479,8 @@ if [[ "$USE_COMPOSE" == "true" ]]; then
     log_info "📦 Deploying via Docker Compose..."
 
     # Validate GPU mode requirements
-    if [[ "$USE_GPU" == "false" ]]; then
+    # Skip confirmation for vLLM (supports both GPU and CPU natively)
+    if [[ "$USE_GPU" == "false" ]] && [[ "$BACKEND_MODE" != "vllm" ]]; then
         log_warn "Docker Compose is typically used for GPU deployments"
         read -p "Continue with Docker Compose for CPU deployment? (y/n) " -n 1 -r
         echo
