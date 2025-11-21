@@ -519,7 +519,7 @@ if [[ "$USE_COMPOSE" == "true" ]]; then
         # Copy docker-compose files to remote host
         log_info "📤 Uploading Docker configuration..."
         ssh_copy "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" \
-            ~/Development/aria-autonomous-infrastructure/docker/* \
+            "$SCRIPT_DIR/../docker/" \
             "$DEPLOY_DIR/"
 
         # Copy Matrix credentials
