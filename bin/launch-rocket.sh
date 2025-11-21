@@ -415,8 +415,8 @@ if [[ "$BACKEND_MODE" == "auto" ]]; then
         BACKEND_MODE=$(detect_backend "" "$LMSTUDIO_PORT")
     fi
     log_info "Auto-detected backend: $BACKEND_MODE"
-elif [[ "$BACKEND_MODE" != "docker" ]] && [[ "$BACKEND_MODE" != "lmstudio" ]] && [[ "$BACKEND_MODE" != "anthropic" ]] && [[ "$BACKEND_MODE" != "vllm" ]]; then
-    exit_with_error "Invalid backend mode: $BACKEND_MODE. Use: docker, lmstudio, anthropic, vllm, or auto"
+elif [[ "$BACKEND_MODE" != "docker" ]] && [[ "$BACKEND_MODE" != "lmstudio" ]] && [[ "$BACKEND_MODE" != "anthropic" ]] && [[ "$BACKEND_MODE" != "vllm" ]] && [[ "$BACKEND_MODE" != "ollama" ]]; then
+    exit_with_error "Invalid backend mode: $BACKEND_MODE. Use: docker, lmstudio, anthropic, vllm, ollama, or auto"
 else
     log_info "Using specified backend: $BACKEND_MODE"
 fi
