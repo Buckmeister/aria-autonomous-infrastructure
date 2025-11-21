@@ -13,8 +13,9 @@ services:
       - LOG_FILE=/var/log/conversational-listener.log
     volumes:
       - ./config:/root/aria-autonomous-infrastructure/config:ro
-      - ./matrix-listener/matrix-conversational-listener-anthropic.sh:/root/aria-autonomous-infrastructure/bin/matrix-conversational-listener.sh:ro
+      - ./matrix-listener/matrix-conversational-listener-anthropic.sh:/root/aria-autonomous-infrastructure/docker/matrix-listener/matrix-conversational-listener-anthropic.sh:ro
     restart: unless-stopped
+    command: ["bash", "/root/aria-autonomous-infrastructure/docker/matrix-listener/matrix-conversational-listener-anthropic.sh"]
     healthcheck:
       test: ["CMD", "pgrep", "-f", "matrix-conversational-listener"]
       interval: 30s
