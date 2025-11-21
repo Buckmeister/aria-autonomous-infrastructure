@@ -1,0 +1,176 @@
+# ============================================================================
+# Ray Cluster Network Policies
+# ============================================================================
+# Network policies for securing Ray Cluster communication
+#
+# Allows:
+# - Ingress controller -> Ray Serve (port 8000)
+# - Rocket pods -> Ray Serve (port 8000)
+# - Ray head <-> Ray workers (internal cluster communication)
+# - Ray -> Rocket backends (Ollama, vLLM, Anthropic)
+# - DNS resolution
+#
+# Denies:
+# - All other traffic
+# ============================================================================
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ray-cluster-network-policy
+  namespace: ray-prod
+spec:
+  podSelector:
+    matchLabels:
+      ray.io/cluster: ray-cluster-prod
+  policyTypes:
+  - Ingress
+  - Egress
+
+  # ============================================================================
+  # Ingress Rules
+  # ============================================================================
+  ingress:
+  # Allow from Ingress controller (for dashboard and Ray Serve API)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress
+    ports:
+    - protocol: TCP
+      port: 8265  # Dashboard
+    - protocol: TCP
+      port: 8000  # Ray Serve
+
+  # Allow from Rocket namespace (for inference requests)
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: rocket
+    ports:
+    - protocol: TCP
+      port: 8000  # Ray Serve
+
+  # Allow internal Ray cluster communication (head <-> workers)
+  - from:
+    - podSelector:
+        matchLabels:
+          ray.io/cluster: ray-cluster-prod
+    ports:
+    - protocol: TCP
+      port: 6379   # GCS/Redis
+    - protocol: TCP
+      port: 8265   # Dashboard
+    - protocol: TCP
+      port: 10001  # Ray Client
+    - protocol: TCP
+      port: 8000   # Ray Serve
+    - protocol: TCP
+      port: 8080   # Metrics
+
+  # Allow Prometheus scraping
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080  # Metrics
+
+  # ============================================================================
+  # Egress Rules
+  # ============================================================================
+  egress:
+  # Allow to Rocket Ollama service
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: rocket
+      podSelector:
+        matchLabels:
+          app: rocket-ollama
+    ports:
+    - protocol: TCP
+      port: 11434
+
+  # Allow to Rocket vLLM service
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: rocket
+      podSelector:
+        matchLabels:
+          app: rocket-vllm
+    ports:
+    - protocol: TCP
+      port: 8000
+
+  # Allow to Rocket Anthropic adapter
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: rocket
+      podSelector:
+        matchLabels:
+          app: rocket-anthropic
+    ports:
+    - protocol: TCP
+      port: 8000
+
+  # Allow to external LM Studio (requires CIDR range)
+  - to:
+    - ipBlock:
+        cidr: 192.168.0.0/16  # Adjust to your network
+    ports:
+    - protocol: TCP
+      port: 1234
+
+  # Allow DNS resolution
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+
+  # Allow HTTPS for external APIs (Anthropic, model downloads)
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 192.168.0.0/16
+        - 172.16.0.0/12
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+
+---
+# Development environment - more permissive
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ray-cluster-network-policy
+  namespace: ray-dev
+spec:
+  podSelector:
+    matchLabels:
+      ray.io/cluster: ray-cluster-dev
+  policyTypes:
+  - Ingress
+  - Egress
+
+  ingress:
+  # Allow all in development
+  - {}
+
+  egress:
+  # Allow all in development
+  - {}

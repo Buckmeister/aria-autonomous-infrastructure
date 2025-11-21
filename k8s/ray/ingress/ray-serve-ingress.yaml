@@ -1,0 +1,72 @@
+# ============================================================================
+# Ray Serve API Ingress
+# ============================================================================
+# Exposes Ray Serve HTTP API for inference requests
+#
+# Access:
+#   Development: http://ray-serve-dev.local/v1/chat/completions
+#   Production:  http://ray-serve.local/v1/chat/completions
+#
+# Usage:
+#   kubectl apply -f k8s/ray/ingress/ray-serve-ingress.yaml
+#
+# Test:
+#   curl -X POST http://ray-serve-dev.local/v1/chat/completions \
+#     -H "Content-Type: application/json" \
+#     -d '{"messages": [{"role": "user", "content": "Hello"}]}'
+# ============================================================================
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ray-serve-api
+  namespace: ray-dev
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: ray-serve-dev.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ray-cluster-dev-head-svc
+            port:
+              number: 8000
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ray-serve-api
+  namespace: ray-prod
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    # Rate limiting for production
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+    nginx.ingress.kubernetes.io/limit-connections: "10"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: ray-serve.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ray-cluster-prod-head-svc
+            port:
+              number: 8000

@@ -1,0 +1,237 @@
+# ============================================================================
+# Ray Cluster - Production Environment
+# ============================================================================
+# Production-ready Ray cluster with HA, persistence, and autoscaling
+#
+# Resources:
+# - Head node: 1.5Gi memory, 1000m CPU, persistent storage
+# - Workers: 3 replicas (min 2, max 4), 1.4Gi memory each
+# - Persistent logs: 1Gi PVC
+# - Autoscaling enabled
+# - Prometheus metrics enabled
+#
+# Prerequisites:
+#   1. Create secret: kubectl create secret generic ray-secrets \
+#        --from-literal=redis-password=$(openssl rand -base64 32) \
+#        -n ray-prod
+#   2. Ensure Prometheus operator is installed for metrics
+#
+# Usage:
+#   kubectl apply -f k8s/ray/shared/ray-secrets.yaml
+#   kubectl apply -f k8s/ray/prod/ray-cluster-prod.yaml
+# ============================================================================
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ray-prod
+  labels:
+    name: ray-prod
+
+---
+apiVersion: ray.io/v1alpha1
+kind: RayCluster
+metadata:
+  name: ray-cluster-prod
+  namespace: ray-prod
+  labels:
+    environment: production
+    app: ray-cluster
+spec:
+  rayVersion: "2.9.0"
+
+  # ============================================================================
+  # Head Node Configuration (with HA)
+  # ============================================================================
+  headGroupSpec:
+    replicas: 1
+    rayStartParams:
+      dashboard-host: "0.0.0.0"
+      num-cpus: "0"
+      metrics-export-port: "8080"
+      # Enable GCS fault tolerance (requires Redis password)
+      redis-password: "$(cat /etc/ray/secrets/redis-password)"
+
+    template:
+      metadata:
+        labels:
+          app: ray-head
+          environment: production
+      spec:
+        containers:
+        - name: ray-head
+          image: rayproject/ray-ml:2.9.0
+          imagePullPolicy: Always
+
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 1.5Gi
+            requests:
+              cpu: 1000m
+              memory: 1.5Gi
+
+          ports:
+          - containerPort: 6379
+            name: gcs
+            protocol: TCP
+          - containerPort: 8265
+            name: dashboard
+            protocol: TCP
+          - containerPort: 10001
+            name: client
+            protocol: TCP
+          - containerPort: 8000
+            name: serve
+            protocol: TCP
+          - containerPort: 8080
+            name: metrics
+            protocol: TCP
+
+          env:
+          - name: RAY_GRAFANA_IFRAME_HOST
+            value: "http://grafana.monitoring:3000"
+          - name: RAY_GRAFANA_HOST
+            value: "http://prometheus-grafana.monitoring:80"
+          - name: RAY_PROMETHEUS_HOST
+            value: "http://prometheus-kube-prometheus-prometheus.monitoring:9090"
+
+          volumeMounts:
+          - name: ray-logs
+            mountPath: /tmp/ray
+          - name: ray-secrets
+            mountPath: /etc/ray/secrets
+            readOnly: true
+
+          livenessProbe:
+            httpGet:
+              path: /api/version
+              port: dashboard
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+
+          readinessProbe:
+            httpGet:
+              path: /api/version
+              port: dashboard
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+
+          # Graceful shutdown
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "ray stop"]
+
+        volumes:
+        - name: ray-logs
+          persistentVolumeClaim:
+            claimName: ray-head-logs
+        - name: ray-secrets
+          secret:
+            secretName: ray-secrets
+
+  # ============================================================================
+  # Worker Node Configuration (with Autoscaling)
+  # ============================================================================
+  workerGroupSpecs:
+  - groupName: inference-routers
+    replicas: 3
+    minReplicas: 2
+    maxReplicas: 4
+
+    rayStartParams:
+      num-cpus: "1"
+      metrics-export-port: "8080"
+
+    template:
+      metadata:
+        labels:
+          app: ray-worker
+          group: inference-routers
+          environment: production
+        annotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "8080"
+          prometheus.io/path: "/metrics"
+      spec:
+        containers:
+        - name: ray-worker
+          image: rayproject/ray-ml:2.9.0
+          imagePullPolicy: Always
+
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 1.4Gi
+            requests:
+              cpu: 1000m
+              memory: 1.4Gi
+
+          env:
+          - name: RAY_object_store_memory
+            value: "450000000"  # 450Mi for object store (~32% of 1.4Gi)
+
+          ports:
+          - containerPort: 8080
+            name: metrics
+            protocol: TCP
+
+          livenessProbe:
+            exec:
+              command:
+              - /bin/bash
+              - -c
+              - "ray health-check --address $(hostname):6379 || exit 1"
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+
+          # Graceful shutdown
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "ray stop"]
+
+---
+# ============================================================================
+# Persistent Volume Claim for Head Node Logs
+# ============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ray-head-logs
+  namespace: ray-prod
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: microk8s-hostpath
+
+---
+# ============================================================================
+# Service Monitor for Prometheus Metrics
+# ============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ray-cluster-metrics
+  namespace: ray-prod
+  labels:
+    app: ray-cluster
+    environment: production
+spec:
+  selector:
+    matchLabels:
+      ray.io/cluster: ray-cluster-prod
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics

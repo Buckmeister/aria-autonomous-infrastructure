@@ -1,0 +1,68 @@
+# ============================================================================
+# Ray Dashboard Ingress
+# ============================================================================
+# Exposes Ray Dashboard for monitoring and job management
+#
+# Access:
+#   Development: http://ray-dashboard-dev.local:8265
+#   Production:  http://ray-dashboard.local:8265  (or your domain)
+#
+# Prerequisites:
+#   1. Nginx Ingress controller installed (microk8s enable ingress)
+#   2. Add to /etc/hosts: <node-ip> ray-dashboard-dev.local ray-dashboard.local
+#
+# Usage:
+#   kubectl apply -f k8s/ray/ingress/ray-dashboard-ingress.yaml
+# ============================================================================
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ray-dashboard
+  namespace: ray-dev
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: ray-dashboard-dev.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ray-cluster-dev-head-svc
+            port:
+              number: 8265
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ray-dashboard
+  namespace: ray-prod
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    # Optional: Enable basic auth for production
+    # nginx.ingress.kubernetes.io/auth-type: basic
+    # nginx.ingress.kubernetes.io/auth-secret: ray-basic-auth
+    # nginx.ingress.kubernetes.io/auth-realm: "Ray Dashboard Authentication"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: ray-dashboard.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ray-cluster-prod-head-svc
+            port:
+              number: 8265
