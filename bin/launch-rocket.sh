@@ -39,9 +39,11 @@ USE_GPU=false
 USE_COMPOSE=false
 DOCKER_HOST_PARAM=""
 
-# Backend mode (docker=pure Docker with inference, lmstudio=hybrid with external LM Studio, auto=detect)
+# Backend mode (docker=pure Docker with inference, lmstudio=hybrid with external LM Studio, anthropic=Cloud API, auto=detect)
 BACKEND_MODE="auto"
 LMSTUDIO_PORT="1234"
+ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+ANTHROPIC_MODEL="claude-sonnet-4-5-20250929"
 
 # Container/Deployment settings
 CONTAINER_NAME="rocket-instance"
@@ -98,11 +100,14 @@ Universal Rocket deployment supporting CPU/GPU, local/remote, and multiple deplo
   --use-gpu             Enable GPU acceleration (automatically enables Docker Compose)
   --use-compose         Use Docker Compose (not needed with --use-gpu)
   --docker-host HOST    Docker host (local, tcp://host:port, or ssh://user@host)
-  --backend MODE        Backend mode: docker|lmstudio|auto (default: auto)
-                        docker:   Self-contained Docker with inference server
-                        lmstudio: Use external LM Studio API (hybrid mode)
-                        auto:     Auto-detect (checks for LM Studio on port 1234)
+  --backend MODE        Backend mode: docker|lmstudio|anthropic|auto (default: auto)
+                        docker:    Self-contained Docker with inference server
+                        lmstudio:  Use external LM Studio API (hybrid mode)
+                        anthropic: Use Anthropic Claude API (cloud, no GPU needed)
+                        auto:      Auto-detect (checks for LM Studio on port 1234)
   --lmstudio-port PORT  LM Studio API port (default: 1234)
+  --anthropic-key KEY   Anthropic API key (or set ANTHROPIC_API_KEY env var)
+  --anthropic-model ID  Anthropic model ID (default: claude-sonnet-4-5-20250929)
 
 === Model Configuration ===
   # For CPU (HuggingFace models):
@@ -287,6 +292,8 @@ while [[ $# -gt 0 ]]; do
         --docker-host) DOCKER_HOST_PARAM="$2"; shift 2 ;;
         --backend) BACKEND_MODE="$2"; shift 2 ;;
         --lmstudio-port) LMSTUDIO_PORT="$2"; shift 2 ;;
+        --anthropic-key) ANTHROPIC_API_KEY="$2"; shift 2 ;;
+        --anthropic-model) ANTHROPIC_MODEL="$2"; shift 2 ;;
 
         # Model configuration
         --model) MODEL_NAME="$2"; shift 2 ;;
@@ -383,10 +390,18 @@ if [[ "$BACKEND_MODE" == "auto" ]]; then
         BACKEND_MODE=$(detect_backend "" "$LMSTUDIO_PORT")
     fi
     log_info "Auto-detected backend: $BACKEND_MODE"
-elif [[ "$BACKEND_MODE" != "docker" ]] && [[ "$BACKEND_MODE" != "lmstudio" ]]; then
-    exit_with_error "Invalid backend mode: $BACKEND_MODE. Use: docker, lmstudio, or auto"
+elif [[ "$BACKEND_MODE" != "docker" ]] && [[ "$BACKEND_MODE" != "lmstudio" ]] && [[ "$BACKEND_MODE" != "anthropic" ]]; then
+    exit_with_error "Invalid backend mode: $BACKEND_MODE. Use: docker, lmstudio, anthropic, or auto"
 else
     log_info "Using specified backend: $BACKEND_MODE"
+fi
+
+# Validate Anthropic API key if using anthropic backend
+if [[ "$BACKEND_MODE" == "anthropic" ]]; then
+    if [[ -z "$ANTHROPIC_API_KEY" ]]; then
+        exit_with_error "Anthropic backend requires --anthropic-key or ANTHROPIC_API_KEY environment variable"
+    fi
+    log_info "Using Anthropic Claude API with model: $ANTHROPIC_MODEL"
 fi
 
 # Auto-enable compose for GPU deployments (GPU always uses compose)
@@ -395,10 +410,14 @@ if [[ "$USE_GPU" == "true" ]]; then
     log_info "GPU mode: Docker Compose automatically enabled"
 fi
 
-# LM Studio mode requires Compose (listener only)
-if [[ "$BACKEND_MODE" == "lmstudio" ]]; then
+# LM Studio and Anthropic modes require Compose (listener only)
+if [[ "$BACKEND_MODE" == "lmstudio" ]] || [[ "$BACKEND_MODE" == "anthropic" ]]; then
     USE_COMPOSE=true
-    log_info "LM Studio backend: Docker Compose automatically enabled (listener only)"
+    if [[ "$BACKEND_MODE" == "lmstudio" ]]; then
+        log_info "LM Studio backend: Docker Compose automatically enabled (listener only)"
+    else
+        log_info "Anthropic backend: Docker Compose automatically enabled (listener only)"
+    fi
 fi
 
 # Validate model configuration
@@ -501,6 +520,16 @@ INFERENCE_PORT=$INFERENCE_PORT
 MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
 ENV_EOF"
+        elif [[ "$BACKEND_MODE" == "anthropic" ]]; then
+            COMPOSE_FILE="docker-compose-anthropic.yml"
+            log_info "Using Anthropic Claude API backend (listener only)"
+
+            ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << 'ENV_EOF'
+ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+ANTHROPIC_MODEL=$ANTHROPIC_MODEL
+MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
+LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-anthropic.sh
+ENV_EOF"
         else
             log_info "Using Docker backend (full stack with inference server)"
 
@@ -553,6 +582,16 @@ LMSTUDIO_PORT=$LMSTUDIO_PORT
 INFERENCE_PORT=$INFERENCE_PORT
 MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
+ENV_EOF
+        elif [[ "$BACKEND_MODE" == "anthropic" ]]; then
+            COMPOSE_FILE="docker-compose-anthropic.yml"
+            log_info "Using Anthropic Claude API backend (listener only)"
+
+            cat > "$DEPLOY_DIR/.env" << ENV_EOF
+ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+ANTHROPIC_MODEL=$ANTHROPIC_MODEL
+MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
+LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-anthropic.sh
 ENV_EOF
         else
             log_info "Using Docker backend (full stack with inference server)"

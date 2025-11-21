@@ -1,0 +1,23 @@
+# Aria Proxima Matrix Listener - Uses Anthropic Claude API
+# No local inference server or GPU required
+services:
+  matrix-listener:
+    build:
+      context: ./matrix-listener
+      dockerfile: Dockerfile
+    container_name: aria-proxima-anthropic
+    environment:
+      - CONFIG_FILE=/root/aria-autonomous-infrastructure/config/matrix-credentials.json
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-5-20250929}
+      - LOG_FILE=/var/log/conversational-listener.log
+    volumes:
+      - ./config:/root/aria-autonomous-infrastructure/config:ro
+      - ./matrix-listener/matrix-conversational-listener-anthropic.sh:/root/aria-autonomous-infrastructure/bin/matrix-conversational-listener.sh:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "matrix-conversational-listener"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
