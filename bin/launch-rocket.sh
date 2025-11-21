@@ -435,8 +435,8 @@ if [[ "$USE_GPU" == "true" ]]; then
     log_info "GPU mode: Docker Compose automatically enabled"
 fi
 
-# LM Studio, Anthropic, and vLLM modes require Compose
-if [[ "$BACKEND_MODE" == "lmstudio" ]] || [[ "$BACKEND_MODE" == "anthropic" ]] || [[ "$BACKEND_MODE" == "vllm" ]]; then
+# LM Studio, Anthropic, vLLM, and Ollama modes require Compose
+if [[ "$BACKEND_MODE" == "lmstudio" ]] || [[ "$BACKEND_MODE" == "anthropic" ]] || [[ "$BACKEND_MODE" == "vllm" ]] || [[ "$BACKEND_MODE" == "ollama" ]]; then
     USE_COMPOSE=true
     if [[ "$BACKEND_MODE" == "lmstudio" ]]; then
         log_info "LM Studio backend: Docker Compose automatically enabled (listener only)"
@@ -444,6 +444,8 @@ if [[ "$BACKEND_MODE" == "lmstudio" ]] || [[ "$BACKEND_MODE" == "anthropic" ]] |
         log_info "Anthropic backend: Docker Compose automatically enabled (listener only)"
     elif [[ "$BACKEND_MODE" == "vllm" ]]; then
         log_info "vLLM backend: Docker Compose automatically enabled (full stack)"
+    elif [[ "$BACKEND_MODE" == "ollama" ]]; then
+        log_info "Ollama backend: Docker Compose automatically enabled (full stack)"
     fi
 fi
 
