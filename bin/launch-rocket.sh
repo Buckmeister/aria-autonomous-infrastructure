@@ -375,6 +375,18 @@ if [[ -n "$DOCKER_HOST_PARAM" ]]; then
         IS_REMOTE=true
         DOCKER_HOST_SSH="${DOCKER_HOST_PARAM#ssh://}"
         log_info "Remote deployment via SSH: $DOCKER_HOST_SSH"
+
+        # Auto-detect SSH key based on hostname
+        if [[ "$DOCKER_HOST_SSH" =~ @([^@]+)$ ]]; then
+            DETECTED_HOST="${BASH_REMATCH[1]}"
+            DETECTED_KEY="$HOME/.aria/ssh/aria_${DETECTED_HOST}"
+            if [[ -f "$DETECTED_KEY" ]]; then
+                DOCKER_HOST_KEY="$DETECTED_KEY"
+                log_info "Using SSH key: $DOCKER_HOST_KEY"
+            else
+                log_warn "SSH key not found for host $DETECTED_HOST, using default: $DOCKER_HOST_KEY"
+            fi
+        fi
     elif [[ "$DOCKER_HOST_PARAM" =~ ^tcp:// ]]; then
         IS_REMOTE=true
         log_info "Remote deployment via TCP: $DOCKER_HOST_PARAM"
