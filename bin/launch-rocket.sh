@@ -39,7 +39,7 @@ USE_GPU=false
 USE_COMPOSE=false
 DOCKER_HOST_PARAM=""
 
-# Backend mode (docker=pure Docker with inference, lmstudio=hybrid with external LM Studio, anthropic=Cloud API, vllm=vLLM inference, auto=detect)
+# Backend mode (docker=pure Docker with inference, lmstudio=hybrid with external LM Studio, anthropic=Cloud API, vllm=vLLM inference, ollama=Ollama inference, auto=detect)
 BACKEND_MODE="auto"
 LMSTUDIO_PORT="1234"
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
@@ -49,6 +49,9 @@ ANTHROPIC_MODEL="claude-sonnet-4-5-20250929"
 TENSOR_PARALLEL_SIZE="1"
 GPU_MEMORY_UTIL="0.9"
 MAX_MODEL_LEN="4096"
+
+# Ollama configuration
+OLLAMA_PORT="11434"
 
 # Container/Deployment settings
 CONTAINER_NAME="rocket-instance"
@@ -105,10 +108,12 @@ Universal Rocket deployment supporting CPU/GPU, local/remote, and multiple deplo
   --use-gpu             Enable GPU acceleration (automatically enables Docker Compose)
   --use-compose         Use Docker Compose (not needed with --use-gpu)
   --docker-host HOST    Docker host (local, tcp://host:port, or ssh://user@host)
-  --backend MODE        Backend mode: docker|lmstudio|anthropic|auto (default: auto)
+  --backend MODE        Backend mode: docker|lmstudio|anthropic|vllm|ollama|auto (default: auto)
                         docker:    Self-contained Docker with inference server
                         lmstudio:  Use external LM Studio API (hybrid mode)
                         anthropic: Use Anthropic Claude API (cloud, no GPU needed)
+                        vllm:      vLLM inference (GPU-optimized, OpenAI-compatible)
+                        ollama:    Ollama inference (CPU-friendly, OpenAI-compatible)
                         auto:      Auto-detect (checks for LM Studio on port 1234)
   --lmstudio-port PORT  LM Studio API port (default: 1234)
   --anthropic-key KEY   Anthropic API key (or set ANTHROPIC_API_KEY env var)
@@ -577,6 +582,16 @@ MAX_MODEL_LEN=$MAX_MODEL_LEN
 MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
 ENV_EOF"
+        elif [[ "$BACKEND_MODE" == "ollama" ]]; then
+            COMPOSE_FILE="docker-compose-ollama.yml"
+            log_info "Using Ollama inference backend (CPU-optimized, GPU-optional)"
+
+            ssh_exec "$DOCKER_HOST_SSH" "$DOCKER_HOST_KEY" "cat > $DEPLOY_DIR/.env << 'ENV_EOF'
+MODEL_NAME=$MODEL_NAME
+OLLAMA_PORT=$OLLAMA_PORT
+MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
+LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
+ENV_EOF"
         else
             log_info "Using Docker backend (full stack with inference server)"
 
@@ -656,6 +671,16 @@ INFERENCE_PORT=$INFERENCE_PORT
 TENSOR_PARALLEL_SIZE=$TENSOR_PARALLEL_SIZE
 GPU_MEMORY_UTIL=$GPU_MEMORY_UTIL
 MAX_MODEL_LEN=$MAX_MODEL_LEN
+MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
+LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
+ENV_EOF
+        elif [[ "$BACKEND_MODE" == "ollama" ]]; then
+            COMPOSE_FILE="docker-compose-ollama.yml"
+            log_info "Using Ollama inference backend (CPU-optimized, GPU-optional)"
+
+            cat > "$DEPLOY_DIR/.env" << ENV_EOF
+MODEL_NAME=$MODEL_NAME
+OLLAMA_PORT=$OLLAMA_PORT
 MATRIX_CONFIG_DIR=$DEPLOY_DIR/config
 LISTENER_SCRIPT=$DEPLOY_DIR/matrix-listener/matrix-conversational-listener-openai.sh
 ENV_EOF

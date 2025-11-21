@@ -1,0 +1,155 @@
+# Rocket Ollama - Docker Compose Configuration
+# CPU-friendly inference using Ollama with OpenAI-compatible API
+# Perfect for development and CPU-only hosts
+
+version: '3.8'
+
+services:
+  # Ollama Inference Server - CPU optimized
+  ollama-server:
+    image: ollama/ollama:latest
+    container_name: rocket-ollama-server
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      # Persist model downloads
+      - ollama-models:/root/.ollama
+    networks:
+      - rocket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    # Pull and load model on startup
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        /bin/ollama serve &
+        OLLAMA_PID=$$!
+
+        # Wait for server to start
+        echo "Waiting for Ollama server to start..."
+        sleep 10
+
+        # Pull the model if MODEL_NAME is set
+        if [ -n "${MODEL_NAME}" ]; then
+          echo "Pulling model: ${MODEL_NAME}..."
+          ollama pull "${MODEL_NAME}"
+        else
+          echo "No MODEL_NAME specified, using default (qwen2.5:0.5b)"
+          ollama pull qwen2.5:0.5b
+        fi
+
+        # Keep server running
+        wait $$OLLAMA_PID
+
+  # Matrix Listener - Connects Matrix to Ollama inference server
+  matrix-listener:
+    build:
+      context: ./matrix-listener
+      dockerfile: Dockerfile
+    container_name: rocket-listener
+    depends_on:
+      ollama-server:
+        condition: service_healthy
+    environment:
+      - CONFIG_FILE=/root/aria-autonomous-infrastructure/config/matrix-credentials.json
+      - INFERENCE_URL=http://ollama-server:11434/v1/chat/completions
+      - LOG_FILE=/var/log/conversational-listener.log
+    volumes:
+      # Mount Matrix credentials
+      - ${MATRIX_CONFIG_DIR:-./config}:/root/aria-autonomous-infrastructure/config:ro
+      # Mount listener script (OpenAI-compatible)
+      - ${LISTENER_SCRIPT:-./matrix-listener/matrix-conversational-listener-openai.sh}:/root/aria-autonomous-infrastructure/bin/matrix-conversational-listener.sh:ro
+    networks:
+      - rocket-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "matrix-conversational-listener"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  ollama-models:
+
+networks:
+  rocket-network:
+    driver: bridge
+
+# ============================================================================
+# Usage
+# ============================================================================
+#
+# CPU Deployment:
+#   Create .env file:
+#     MODEL_NAME=qwen2.5:0.5b         # Ollama model tag
+#     OLLAMA_PORT=11434                # Default Ollama port
+#     MATRIX_CONFIG_DIR=./config
+#
+#   Start:
+#     docker compose -f docker-compose-ollama.yml up -d
+#
+#   Available Models (examples):
+#     - qwen2.5:0.5b    (Recommended for CPU)
+#     - qwen2.5:1.5b    (Good balance)
+#     - qwen2.5:3b      (More capable, slower)
+#     - llama3.2:1b     (Fast, lightweight)
+#     - llama3.2:3b     (Good performance)
+#
+# ============================================================================
+# Why Ollama?
+# ============================================================================
+#
+# ✅ CPU-Optimized: Designed for CPU inference from the ground up
+# ✅ OpenAI-Compatible: Drop-in replacement for OpenAI API
+# ✅ Easy Model Management: Pull models with simple tags (no GGUF conversion)
+# ✅ GPU Support: Automatically uses GPU if available (NVIDIA, AMD, Intel)
+# ✅ Multi-Backend Support: Works with CUDA, ROCm, Metal, Vulkan
+# ✅ Local & Private: All inference runs locally
+# ✅ Active Community: Large ecosystem and frequent updates
+# ✅ Kubernetes Ready: Simple to deploy in K8s environments
+#
+# ============================================================================
+# Ollama vs vLLM vs llama.cpp
+# ============================================================================
+#
+# Ollama:
+#   • Best for: CPU inference, ease of use, model management
+#   • Performance: Good (optimized for consumer hardware)
+#   • API: OpenAI-compatible (/v1/chat/completions)
+#   • GPU: Optional (automatic detection)
+#
+# vLLM:
+#   • Best for: GPU inference, production scale, high throughput
+#   • Performance: Excellent (GPU-optimized, PagedAttention)
+#   • API: OpenAI-compatible (/v1/chat/completions)
+#   • GPU: Required (Docker image limitation)
+#
+# llama.cpp:
+#   • Best for: Maximum CPU efficiency, custom builds
+#   • Performance: Excellent (C++ implementation)
+#   • API: Custom (requires wrapper)
+#   • GPU: Optional (via CUDA, Metal, etc.)
+#
+# ============================================================================
+# Next Steps (Phase 2-3)
+# ============================================================================
+#
+# Phase 2 (Kubernetes):
+#   - Convert to K8s Deployment + Service
+#   - Add ConfigMap for model configuration
+#   - Use PersistentVolume for model caching
+#   - Enable node affinity for CPU/GPU scheduling
+#
+# Phase 3 (Ray Cluster):
+#   - Deploy Ollama as Ray Serve application
+#   - Enable GPU-preferred, CPU-fallback scheduling
+#   - Add Ray Dashboard for monitoring
+#   - Implement intelligent request routing
+#   - Consider vLLM for GPU nodes, Ollama for CPU nodes
+#
