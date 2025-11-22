@@ -1,0 +1,577 @@
+#!/bin/bash
+# ==============================================================================
+# kmgr - Kubernetes Cluster Manager for Xen Infrastructure
+# ==============================================================================
+#
+# Comprehensive management tool for MicroK8s clusters running on XCP-ng/Xen
+# Created by: Aria Prime
+# Date: 2025-11-22
+#
+# Features:
+#   - Create/destroy entire Kubernetes clusters
+#   - Add/remove individual nodes
+#   - Cluster health monitoring
+#   - SSH key management
+#   - Integration with Ray Cluster and Rocket AI
+#
+# Usage:
+#   kmgr status                      Show current cluster status
+#   kmgr create [NAME]               Create new Kubernetes cluster
+#   kmgr destroy [NAME]              Destroy existing cluster
+#   kmgr add-node [NAME] [TYPE]      Add control-plane or worker node
+#   kmgr remove-node [NAME] [NODE]   Remove specific node
+#   kmgr ssh [NODE]                  SSH into cluster node
+#   kmgr keys                        Manage SSH keys
+#   kmgr config                      Show/edit cluster configuration
+#
+# ==============================================================================
+
+set -euo pipefail
+
+# ==============================================================================
+# Configuration
+# ==============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ARIA_DIR="${HOME}/.aria"
+ARIA_SSH_DIR="${ARIA_DIR}/ssh"
+ARIA_K8S_DIR="${ARIA_DIR}/kubernetes"
+ARIA_CONFIG_DIR="${ARIA_DIR}/config"
+
+# Xen configuration
+XEN_HOST="opt-bck01.bck.intern"
+XEN_SSH_KEY="${ARIA_SSH_DIR}/aria_xen_key"
+XEN_USER="root"
+
+# Default cluster configuration
+DEFAULT_CLUSTER_NAME="kcl1"
+DEFAULT_CONTROL_PLANE_COUNT=3
+DEFAULT_WORKER_COUNT=4
+DEFAULT_NETWORK="192.168.188.0/24"
+DEFAULT_VM_TEMPLATE="Debian 12 Cloud Init"
+DEFAULT_MEMORY="2048M"
+DEFAULT_CPUS="2"
+
+# Kubernetes configuration
+K8S_VERSION="1.34"
+MICROK8S_CHANNEL="1.34/stable"
+
+# Colors for output (from test_xen patterns)
+COLOR_RESET="\033[0m"
+COLOR_BOLD="\033[1m"
+COLOR_RED="\033[31m"
+COLOR_GREEN="\033[32m"
+COLOR_YELLOW="\033[33m"
+COLOR_BLUE="\033[34m"
+COLOR_PURPLE="\033[35m"
+COLOR_CYAN="\033[36m"
+COLOR_GRAY="\033[90m"
+
+# ==============================================================================
+# Helper Functions
+# ==============================================================================
+
+print_header() {
+    local title="$1"
+    local subtitle="${2:-}"
+    echo -e "${COLOR_PURPLE}${COLOR_BOLD}"
+    echo "╔════════════════════════════════════════════════════════════════════╗"
+    printf "║ %-66s ║\n" "$title"
+    if [[ -n "$subtitle" ]]; then
+        printf "║ %-66s ║\n" "$subtitle"
+    fi
+    echo "╚════════════════════════════════════════════════════════════════════╝"
+    echo -e "${COLOR_RESET}"
+}
+
+print_section() {
+    local text="$1"
+    echo -e "\n${COLOR_CYAN}${COLOR_BOLD}▶ $text${COLOR_RESET}"
+}
+
+print_success() {
+    echo -e "${COLOR_GREEN}✓${COLOR_RESET} $1"
+}
+
+print_error() {
+    echo -e "${COLOR_RED}✗${COLOR_RESET} $1" >&2
+}
+
+print_warning() {
+    echo -e "${COLOR_YELLOW}⚠${COLOR_RESET} $1"
+}
+
+print_info() {
+    echo -e "${COLOR_BLUE}ℹ${COLOR_RESET} $1"
+}
+
+# Ensure directory exists
+ensure_dir() {
+    local dir="$1"
+    if [[ ! -d "$dir" ]]; then
+        mkdir -p "$dir"
+        print_success "Created directory: $dir"
+    fi
+}
+
+# Execute command on Xen host
+xen_ssh() {
+    ssh -i "$XEN_SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        "${XEN_USER}@${XEN_HOST}" "$@" 2>/dev/null
+}
+
+# Execute command on cluster node
+node_ssh() {
+    local node="$1"
+    shift
+    local key="${ARIA_SSH_DIR}/aria_${node}_key"
+
+    if [[ ! -f "$key" ]]; then
+        print_error "SSH key not found for node: $node"
+        return 1
+    fi
+
+    ssh -i "$key" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        "debian@${node}" "$@" 2>/dev/null
+}
+
+# ==============================================================================
+# SSH Key Management
+# ==============================================================================
+
+cmd_keys_help() {
+    cat << EOF
+${COLOR_BOLD}SSH Key Management${COLOR_RESET}
+
+Commands:
+  kmgr keys list                List all managed SSH keys
+  kmgr keys generate [NAME]     Generate new SSH key pair
+  kmgr keys show [NAME]         Show public key content
+  kmgr keys deploy [NAME] [HOST] Deploy key to remote host
+
+Keys are stored in: ${ARIA_SSH_DIR}/
+
+EOF
+}
+
+cmd_keys_list() {
+    print_header "SSH Keys" "Keys stored in ~/.aria/ssh/"
+
+    ensure_dir "$ARIA_SSH_DIR"
+
+    if [[ ! -d "$ARIA_SSH_DIR" ]] || [[ -z "$(ls -A "$ARIA_SSH_DIR" 2>/dev/null)" ]]; then
+        print_info "No SSH keys found"
+        return 0
+    fi
+
+    echo -e "\n${COLOR_BOLD}Private Keys:${COLOR_RESET}"
+    for key in "$ARIA_SSH_DIR"/*; do
+        if [[ -f "$key" ]] && [[ ! "$key" =~ \.pub$ ]] && [[ ! "$key" =~ \.md$ ]]; then
+            local keyname=$(basename "$key")
+            local size=$(ssh-keygen -lf "$key" 2>/dev/null | awk '{print $1}' || echo "unknown")
+            echo -e "  ${COLOR_GREEN}•${COLOR_RESET} $keyname ${COLOR_GRAY}($size bits)${COLOR_RESET}"
+
+            # Check if public key exists
+            if [[ -f "${key}.pub" ]]; then
+                echo -e "    ${COLOR_GRAY}└─ Public key: ${keyname}.pub${COLOR_RESET}"
+            else
+                echo -e "    ${COLOR_YELLOW}└─ Warning: No public key found${COLOR_RESET}"
+            fi
+        fi
+    done
+}
+
+cmd_keys_generate() {
+    local keyname="${1:-aria_k8s_key}"
+    local keypath="${ARIA_SSH_DIR}/${keyname}"
+
+    ensure_dir "$ARIA_SSH_DIR"
+
+    print_section "Generating SSH Key: $keyname"
+
+    if [[ -f "$keypath" ]]; then
+        print_warning "Key already exists: $keypath"
+        read -p "Overwrite? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Cancelled"
+            return 0
+        fi
+        rm -f "$keypath" "${keypath}.pub"
+    fi
+
+    ssh-keygen -t ed25519 -C "aria@kubernetes-cluster" -f "$keypath" -N ""
+    chmod 600 "$keypath"
+    chmod 644 "${keypath}.pub"
+
+    print_success "SSH key generated: $keypath"
+    print_info "Public key: ${keypath}.pub"
+    echo
+    cat "${keypath}.pub"
+}
+
+cmd_keys_show() {
+    local keyname="${1:-}"
+
+    if [[ -z "$keyname" ]]; then
+        print_error "Usage: kmgr keys show [KEY_NAME]"
+        return 1
+    fi
+
+    local keypath="${ARIA_SSH_DIR}/${keyname}.pub"
+
+    if [[ ! -f "$keypath" ]]; then
+        keypath="${ARIA_SSH_DIR}/${keyname}"
+        if [[ ! -f "${keypath}.pub" ]]; then
+            print_error "Key not found: $keyname"
+            return 1
+        fi
+        keypath="${keypath}.pub"
+    fi
+
+    print_section "Public Key: $keyname"
+    cat "$keypath"
+}
+
+# ==============================================================================
+# Cluster Status
+# ==============================================================================
+
+cmd_status() {
+    local cluster_name="${1:-$DEFAULT_CLUSTER_NAME}"
+
+    print_header "Kubernetes Cluster Status" "$cluster_name"
+
+    # Check Xen connectivity
+    print_section "Xen Host Connectivity"
+    if xen_ssh "echo 'Connected'" >/dev/null 2>&1; then
+        print_success "Connected to Xen host: $XEN_HOST"
+    else
+        print_error "Cannot connect to Xen host: $XEN_HOST"
+        print_info "Check SSH key: $XEN_SSH_KEY"
+        return 1
+    fi
+
+    # List VMs in cluster
+    print_section "Cluster VMs"
+    local vms=$(xen_ssh "xe vm-list params=name-label,power-state | grep -E '(cp-|worker-)'" 2>/dev/null || echo "")
+
+    if [[ -z "$vms" ]]; then
+        print_warning "No cluster VMs found"
+    else
+        echo "$vms" | while IFS= read -r line; do
+            if [[ "$line" =~ name-label ]]; then
+                local vm_name=$(echo "$line" | awk '{print $4}')
+                local next_line=""
+                read next_line
+                local power_state=$(echo "$next_line" | awk '{print $3}')
+
+                if [[ "$power_state" == "running" ]]; then
+                    echo -e "  ${COLOR_GREEN}●${COLOR_RESET} $vm_name ${COLOR_GRAY}(running)${COLOR_RESET}"
+                else
+                    echo -e "  ${COLOR_RED}●${COLOR_RESET} $vm_name ${COLOR_GRAY}($power_state)${COLOR_RESET}"
+                fi
+            fi
+        done
+    fi
+
+    # Check Kubernetes cluster access
+    print_section "Kubernetes Cluster"
+    local control_plane="cp-1"
+
+    if node_ssh "$control_plane" "sudo /snap/bin/microk8s status" >/dev/null 2>&1; then
+        print_success "MicroK8s is running on $control_plane"
+
+        # Get node status
+        echo -e "\n${COLOR_BOLD}Nodes:${COLOR_RESET}"
+        node_ssh "$control_plane" "sudo /snap/bin/microk8s kubectl get nodes" | tail -n +2 | while IFS= read -r line; do
+            local node_name=$(echo "$line" | awk '{print $1}')
+            local status=$(echo "$line" | awk '{print $2}')
+
+            if [[ "$status" == "Ready" ]]; then
+                echo -e "  ${COLOR_GREEN}✓${COLOR_RESET} $line"
+            else
+                echo -e "  ${COLOR_RED}✗${COLOR_RESET} $line"
+            fi
+        done
+
+        # Show deployed resources
+        echo -e "\n${COLOR_BOLD}Namespaces:${COLOR_RESET}"
+        node_ssh "$control_plane" "sudo /snap/bin/microk8s kubectl get namespaces" | tail -n +2 | awk '{print "  • " $1}'
+
+    else
+        print_warning "Cannot connect to Kubernetes cluster on $control_plane"
+        print_info "Cluster may not be initialized yet"
+    fi
+}
+
+# ==============================================================================
+# Cluster Creation
+# ==============================================================================
+
+cmd_create() {
+    local cluster_name="${1:-$DEFAULT_CLUSTER_NAME}"
+
+    print_header "Create Kubernetes Cluster" "$cluster_name"
+
+    print_warning "This feature is under development"
+    print_info "Current cluster: $DEFAULT_CLUSTER_NAME (7 nodes, 50 days old)"
+    echo
+    print_info "Planned features:"
+    echo "  • Automated VM provisioning via Xen"
+    echo "  • MicroK8s installation and cluster formation"
+    echo "  • Automatic SSH key deployment"
+    echo "  • Network configuration"
+    echo "  • Storage and addons setup"
+    echo
+    print_info "For now, use the existing cluster or manually provision VMs"
+}
+
+# ==============================================================================
+# Node Management
+# ==============================================================================
+
+cmd_add_node() {
+    local cluster_name="${1:-$DEFAULT_CLUSTER_NAME}"
+    local node_type="${2:-worker}"
+
+    print_header "Add Node to Cluster" "$cluster_name - $node_type"
+
+    print_warning "This feature is under development"
+    print_info "To manually add a node:"
+    echo "  1. Create VM on Xen host"
+    echo "  2. Install MicroK8s"
+    echo "  3. Get join token from control plane:"
+    echo "     sudo microk8s add-node"
+    echo "  4. Join from new node:"
+    echo "     sudo microk8s join <IP>:25000/<token>"
+}
+
+cmd_remove_node() {
+    local cluster_name="${1:-$DEFAULT_CLUSTER_NAME}"
+    local node_name="${2:-}"
+
+    if [[ -z "$node_name" ]]; then
+        print_error "Usage: kmgr remove-node [CLUSTER] [NODE_NAME]"
+        return 1
+    fi
+
+    print_header "Remove Node from Cluster" "$cluster_name - $node_name"
+
+    print_warning "This will remove node $node_name from the cluster"
+    read -p "Continue? (y/N): " -n 1 -r
+    echo
+
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_info "Cancelled"
+        return 0
+    fi
+
+    print_section "Draining node: $node_name"
+    node_ssh "cp-1" "sudo /snap/bin/microk8s kubectl drain $node_name --ignore-daemonsets --delete-emptydir-data" || true
+
+    print_section "Removing node from cluster"
+    node_ssh "cp-1" "sudo /snap/bin/microk8s kubectl delete node $node_name" || true
+
+    print_section "Leaving cluster on node"
+    node_ssh "$node_name" "sudo /snap/bin/microk8s leave" || print_warning "Node unreachable"
+
+    print_success "Node removed: $node_name"
+}
+
+# ==============================================================================
+# SSH Access
+# ==============================================================================
+
+cmd_ssh() {
+    local node="${1:-cp-1}"
+
+    print_info "Connecting to $node..."
+    node_ssh "$node" || {
+        print_error "Failed to connect to $node"
+        print_info "Ensure SSH key exists: ${ARIA_SSH_DIR}/aria_${node}_key"
+        return 1
+    }
+}
+
+# ==============================================================================
+# Configuration
+# ==============================================================================
+
+cmd_config() {
+    print_header "Cluster Configuration"
+
+    ensure_dir "$ARIA_CONFIG_DIR"
+
+    local config_file="${ARIA_CONFIG_DIR}/kubernetes-clusters.conf"
+
+    if [[ ! -f "$config_file" ]]; then
+        cat > "$config_file" << 'EOF'
+# Kubernetes Cluster Configuration
+# This file stores cluster definitions for kmgr
+
+[kcl1]
+name=kcl1
+control_plane_nodes=cp-1,cp-2,cp-3
+worker_nodes=worker-1,worker-2,worker-3,worker-4
+network=192.168.188.0/24
+created=2025-10-03
+status=active
+description=Primary development cluster (7 nodes)
+
+# Add more clusters as needed
+# [kcl2]
+# name=kcl2
+# ...
+EOF
+        print_success "Created configuration file: $config_file"
+    fi
+
+    echo -e "\n${COLOR_BOLD}Configuration file:${COLOR_RESET} $config_file"
+    echo
+    cat "$config_file"
+    echo
+    print_info "Edit with: vim $config_file"
+}
+
+# ==============================================================================
+# Documentation
+# ==============================================================================
+
+cmd_help() {
+    cat << 'EOF'
+╔════════════════════════════════════════════════════════════════════╗
+║                   kmgr - Kubernetes Manager                        ║
+║            Comprehensive cluster management for Aria               ║
+╚════════════════════════════════════════════════════════════════════╝
+
+USAGE:
+  kmgr <command> [options]
+
+CLUSTER COMMANDS:
+  status [CLUSTER]              Show cluster status and health
+  create [CLUSTER]              Create new Kubernetes cluster
+  destroy [CLUSTER]             Destroy existing cluster
+  config                        Show/edit cluster configuration
+
+NODE COMMANDS:
+  add-node [CLUSTER] [TYPE]     Add control-plane or worker node
+  remove-node [CLUSTER] [NODE]  Remove node from cluster
+  ssh [NODE]                    SSH into cluster node
+
+SSH KEY COMMANDS:
+  keys list                     List all managed SSH keys
+  keys generate [NAME]          Generate new SSH key pair
+  keys show [NAME]              Display public key
+  keys deploy [NAME] [HOST]     Deploy key to host
+
+EXAMPLES:
+  # Show current cluster status
+  kmgr status
+
+  # Generate SSH key for new cluster
+  kmgr keys generate aria_k8s_dev
+
+  # SSH into control plane node
+  kmgr ssh cp-1
+
+  # Remove a worker node
+  kmgr remove-node kcl1 worker-4
+
+  # Show cluster configuration
+  kmgr config
+
+CLUSTER INFORMATION:
+  Current cluster: kcl1 (7 nodes)
+  • Control plane: cp-1, cp-2, cp-3
+  • Workers: worker-1, worker-2, worker-3, worker-4
+  • Network: 192.168.188.0/24
+  • Age: 50 days
+  • Kubernetes: v1.34.1
+  • Runtime: MicroK8s
+
+CONFIGURATION:
+  Aria directory: ~/.aria/
+  SSH keys: ~/.aria/ssh/
+  K8s configs: ~/.aria/kubernetes/
+  Cluster configs: ~/.aria/config/
+
+INTEGRATION:
+  • Ray Cluster (deployed via k8s/ray/)
+  • Rocket AI (Matrix bot integration)
+  • Xen/XCP-ng (VM management)
+  • MicroK8s (Kubernetes distribution)
+
+DOCUMENTATION:
+  Infrastructure: ~/.aria/INFRASTRUCTURE.md
+  Resume: ~/.aria/RESUME_HERE.md
+  Ray Cluster: ~/Development/aria-autonomous-infrastructure/docs/RAY_CLUSTER_INTEGRATION.md
+
+For more information: kmgr <command> --help
+
+EOF
+}
+
+# ==============================================================================
+# Main Command Router
+# ==============================================================================
+
+main() {
+    # Ensure .aria directory structure exists
+    ensure_dir "$ARIA_DIR"
+    ensure_dir "$ARIA_SSH_DIR"
+    ensure_dir "$ARIA_K8S_DIR"
+    ensure_dir "$ARIA_CONFIG_DIR"
+
+    local command="${1:-help}"
+    shift || true
+
+    case "$command" in
+        status)
+            cmd_status "$@"
+            ;;
+        create)
+            cmd_create "$@"
+            ;;
+        destroy)
+            print_error "destroy command not yet implemented"
+            return 1
+            ;;
+        add-node)
+            cmd_add_node "$@"
+            ;;
+        remove-node)
+            cmd_remove-node "$@"
+            ;;
+        ssh)
+            cmd_ssh "$@"
+            ;;
+        keys)
+            local subcmd="${1:-list}"
+            shift || true
+            case "$subcmd" in
+                list) cmd_keys_list "$@" ;;
+                generate) cmd_keys_generate "$@" ;;
+                show) cmd_keys_show "$@" ;;
+                deploy) print_error "keys deploy not yet implemented" ;;
+                help|--help) cmd_keys_help ;;
+                *) print_error "Unknown keys subcommand: $subcmd"; cmd_keys_help; return 1 ;;
+            esac
+            ;;
+        config)
+            cmd_config "$@"
+            ;;
+        help|--help|-h)
+            cmd_help
+            ;;
+        *)
+            print_error "Unknown command: $command"
+            echo
+            cmd_help
+            return 1
+            ;;
+    esac
+}
+
+# Run main function
+main "$@"
