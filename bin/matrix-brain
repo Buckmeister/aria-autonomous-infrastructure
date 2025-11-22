@@ -43,17 +43,12 @@ class MatrixBrain:
         self.identity_name = identity_name.lower()
         self.aria_home = Path(aria_home or Path.home() / ".aria")
 
-        # Load Matrix config
+        # Initialize Matrix client (it loads config internally)
+        self.matrix = MatrixClient(config_path=Path(config_path))
+
+        # Store config for display
         with open(config_path) as f:
             self.config = json.load(f)
-
-        # Initialize Matrix client
-        self.matrix = MatrixClient(
-            homeserver_url=self.config['homeserver_url'],
-            user_id=self.config['user_id'],
-            access_token=self.config['access_token'],
-            room_id=self.config['room_id']
-        )
 
         # Load identity from ~/.aria/identity/who-i-am.md
         self.load_identity()
